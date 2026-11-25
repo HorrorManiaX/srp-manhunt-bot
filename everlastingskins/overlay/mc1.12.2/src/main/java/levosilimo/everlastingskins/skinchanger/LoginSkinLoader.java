@@ -34,6 +34,15 @@ final class LoginSkinLoader {
             expires=System.currentTimeMillis()+(skin==null?180000L:3600000L);
         }
     }
+    static void applySavedBeforeJoin(EntityPlayerMP player, SkinStorage storage) {
+        boolean override=Config.DEFAULT_SKINS_ENABLED && Config.DEFAULT_SKINS_LIST.length>0
+                && Config.DEFAULT_SKINS_APPLY_FOR_PREMIUM;
+        if (override) return;
+        CustomSkinProperty stored=storage.getSkin(player.getUniqueID());
+        if (stored==null || stored.isEmpty() || !stored.isValid()) return;
+        player.getGameProfile().getProperties().removeAll("textures");
+        player.getGameProfile().getProperties().put("textures",stored.getOriginalProperty());
+    }
     static void onLogin(EntityPlayerMP player, SkinStorage storage) {
         if (storage==null) return;
         UUID uuid=player.getUniqueID();

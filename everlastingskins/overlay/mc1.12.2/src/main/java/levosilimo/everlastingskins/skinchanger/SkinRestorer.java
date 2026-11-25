@@ -66,6 +66,15 @@ public class SkinRestorer {
         SkinCommand.register(server);
     }
 
+    /** Forge fires this after player NBT loading, before initial tab/spawn packets. */
+    @SubscribeEvent
+    public void onPlayerLoad(net.minecraftforge.event.entity.player.PlayerEvent.LoadFromFile event) {
+        if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) return;
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntityPlayer();
+        if (skinStorage == null || server == null || player.mcServer != server || player.connection != null) return;
+        LoginSkinLoader.applySavedBeforeJoin(player, skinStorage);
+    }
+
     /**
      * Applies the player's saved skin on login.
      *

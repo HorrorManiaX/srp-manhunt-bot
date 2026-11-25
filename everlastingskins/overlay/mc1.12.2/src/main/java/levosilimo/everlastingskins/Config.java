@@ -22,7 +22,7 @@ public final class Config {
 
     public static boolean metricsEnabled = true;
     public static int metricsDumpIntervalSeconds = 60;
-    public static boolean refreshViaEntityTracker = true;
+    public static boolean refreshViaEntityTracker = false;
     public static int COOLDOWN_SECONDS = 3;
     public static boolean RATE_LIMIT_ENABLED = true;
     public static int MAX_COMMANDS_PER_MINUTE = 5;
@@ -70,8 +70,9 @@ public final class Config {
                 "Enable in-process metrics");
             metricsDumpIntervalSeconds = cfg.getInt("metricsDumpIntervalSeconds", "everlastingskins",
                 metricsDumpIntervalSeconds, 0, 3600, "Metrics dump interval (seconds)");
-            refreshViaEntityTracker = cfg.getBoolean("refreshViaEntityTracker", "everlastingskins",
-                refreshViaEntityTracker, "Force EntityTracker untrack/re-track on refresh for observer entity re-render");
+            cfg.get("everlastingskins", "refreshViaEntityTracker", false,
+                "Disabled in Manhunt: never recreate or retrack entities for skins").set(false);
+            refreshViaEntityTracker = false;
             RATE_LIMIT_ENABLED = cfg.getBoolean("rate_limit_enabled", "everlastingskins",
                 RATE_LIMIT_ENABLED, "Enable /skin rate limiting");
             COOLDOWN_SECONDS = cfg.getInt("cooldown_seconds", "everlastingskins",

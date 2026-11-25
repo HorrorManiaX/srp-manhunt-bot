@@ -7,20 +7,12 @@
 package levosilimo.everlastingskins.skinchanger;
 
 import com.mojang.authlib.GameProfile;
-import levosilimo.everlastingskins.Config;
 import levosilimo.everlastingskins.EverlastingSkins;
 import levosilimo.everlastingskins.broadcast.SkinBroadcaster;
 import levosilimo.everlastingskins.broadcast.VanillaSkinBroadcaster;
 import levosilimo.everlastingskins.metrics.SkinMetrics;
 import levosilimo.everlastingskins.util.CustomSkinProperty;
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.network.play.server.SPacketEntityEffect;
-import net.minecraft.network.play.server.SPacketRespawn;
-import net.minecraft.network.play.server.SPacketServerDifficulty;
-import net.minecraft.potion.PotionEffect;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.management.PlayerList;
-import net.minecraft.world.WorldServer;
 
 /**
  * Server-tick half of a skin change: enqueues the async disk flush, mutates
@@ -107,8 +99,7 @@ final class SkinRefreshTask {
         // Tab-list re-add to ALL online players (global, no dimension scoping).
         long broadcastNanos = broadcastProfileChange(target);
 
-        // Respawn in the same dimension so the target's own view refreshes without an inventory wipe.
-        respawnSelf(target);
+        // Never recreate the client's player for a cosmetic change.
 
         SkinMetrics.INSTANCE.recordRefreshCompleted(
             target.getUniqueID(), startNanos, fetchNanos, saveNanos, broadcastNanos);
@@ -124,8 +115,6 @@ final class SkinRefreshTask {
         try {
             mutateProfile(target, property);
             broadcastProfileChange(target);
-            respawnSelf(target);
-            target.mcServer.getPlayerList().syncPlayerInventory(target);
         } catch (Exception e) {
             EverlastingSkins.logger.warn("Login skin refresh failed for {}", target.getName(), e);
         }
@@ -143,8 +132,8 @@ final class SkinRefreshTask {
     /**
      * Clear half of the cascade: drop the applied textures property and, only
      * when stale textures actually existed, re-broadcast REMOVE+ADD so
-     * observers re-learn the profile and run the respawn cascade so the
-     * target's own view reverts to the default skin. A textureless profile has
+     * observers re-learn the profile without respawning the target.
+     * Existing rendered entities may require a normal reconnect. A textureless profile has
      * nothing to revert or re-learn: the clear is a silent no-op with no
      * broadcast, no cascade and no failure metric. Storage was already cleared
      * by the caller, so nothing is persisted here.
@@ -156,7 +145,6 @@ final class SkinRefreshTask {
             return;
         }
         broadcastProfileChange(target);
-        respawnSelf(target);
     }
 
     /**
@@ -169,35 +157,7 @@ final class SkinRefreshTask {
     private static long broadcastProfileChange(EntityPlayerMP target) {
         long broadcastStartNanos = System.nanoTime();
         broadcaster.broadcastProfileChange(target.getGameProfile(), target);
-        broadcaster.trackerUntrackRetrack(target);
         return System.nanoTime() - broadcastStartNanos;
     }
 
-    /** Respawn cascade for the target's own view. */
-    private static void respawnSelf(EntityPlayerMP target) {
-        MinecraftServer server = target.mcServer;
-        PlayerList playerList = server.getPlayerList();
-        WorldServer world = (WorldServer) target.world;
-
-        EntityPlayerMP self = target;
-        self.connection.sendPacket(new SPacketRespawn(
-            self.dimension, self.world.getDifficulty(),
-            self.world.getWorldInfo().getTerrainType(),
-            self.interactionManager.getGameType()));
-        self.connection.setPlayerLocation(
-            self.posX, self.posY, self.posZ, self.rotationYaw, self.rotationPitch);
-        self.connection.sendPacket(new SPacketServerDifficulty(
-            self.world.getDifficulty(),
-            self.world.getWorldInfo().isDifficultyLocked()));
-        playerList.updatePermissionLevel(self);
-        self.sendPlayerAbilities();
-
-        // Potion effects must be replayed after respawn (vanilla transferPlayerToDimension parity).
-        for (PotionEffect effect : self.getActivePotionEffects()) {
-            self.connection.sendPacket(new SPacketEntityEffect(self.getEntityId(), effect));
-        }
-
-        // Time/weather resend, matching join behavior.
-        playerList.updateTimeAndWeatherForPlayer(self, world);
-    }
 }

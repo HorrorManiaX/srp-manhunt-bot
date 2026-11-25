@@ -27,7 +27,7 @@ jobs:
       - name: Apply Manhunt overlay
         run: |
           cp -R everlastingskins/overlay/. upstream/
-          sed -i 's/^mod_version=.*/mod_version=2.1.0-rc2-manhunt.1/' upstream/mc1.12.2/gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=2.1.0-rc2-manhunt.2/' upstream/mc1.12.2/gradle.properties
       - name: Compile and reobfuscate Forge mod
         working-directory: upstream/mc1.12.2
         run: bash ./gradlew --no-daemon --stacktrace build
