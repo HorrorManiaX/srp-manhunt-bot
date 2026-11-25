@@ -1,0 +1,41 @@
+name: Build EverlastingSkins Manhunt
+on:
+  push:
+    branches: [everlastingskins-manhunt]
+    paths:
+      - 'everlastingskins/**'
+      - '.github/workflows/everlastingskins-manhunt.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Levosilimo/Everlasting-Skins
+          ref: ee0d2ed4f19a93a76e0be1031b01cdb7df86badf
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Apply Manhunt overlay
+        run: |
+          cp -R everlastingskins/overlay/. upstream/
+          sed -i 's/^mod_version=.*/mod_version=2.1.0-rc2-manhunt.1/' upstream/mc1.12.2/gradle.properties
+      - name: Compile and reobfuscate Forge mod
+        working-directory: upstream/mc1.12.2
+        run: bash ./gradlew --no-daemon --stacktrace build
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: EverlastingSkins-1.12.2-Manhunt
+          path: |
+            upstream/mc1.12.2/build/libs/*.jar
+            !upstream/mc1.12.2/build/libs/*-sources.jar
+          if-no-files-found: error

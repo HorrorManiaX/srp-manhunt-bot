@@ -1,0 +1,1 @@
+Manhunt Forge 1.12.2 overlay, MIT upstream Levosilimo/Everlasting-Skins at ee0d2ed4f19a93a76e0be1031b01cdb7df86badf. Automatic login restoration, Mojang then signed Ely.by fallback, bounded network executor and cache, profile refresh. No UUID changes. Built with JDK 8; Cleanroom runtime must be tested. Actions artifact contains the reobfuscated mod.
