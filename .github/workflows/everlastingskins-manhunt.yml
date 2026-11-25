@@ -31,6 +31,15 @@ jobs:
       - name: Compile and reobfuscate Forge mod
         working-directory: upstream/mc1.12.2
         run: bash ./gradlew --no-daemon --stacktrace build
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EverlastingSkins-test-reports
+          path: |
+            upstream/mc1.12.2/build/test-results/test/
+            upstream/mc1.12.2/build/reports/tests/test/
+          if-no-files-found: ignore
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
