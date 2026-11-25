@@ -62,6 +62,10 @@ final class LoginSkinLoader {
                         if (server.getPlayerList().getPlayerByUUID(uuid)!=player || player.connection==null) return;
                         if (!Objects.equals(initial,storage.getSkin(uuid))) return;
                         if (!override && !storage.hasDefaultSkin(uuid)) return;
+                        if (!configured) {
+                            storage.saveSkinAsync(uuid,result);
+                            storage.setSkin(uuid,result);
+                        }
                         SkinRefreshTask.loginRefresh(player,result);
                     });
                 } catch (Exception e) { EverlastingSkins.logger.debug("Login skin lookup failed for {}",name,e); }
@@ -70,7 +74,7 @@ final class LoginSkinLoader {
     }
     private static CustomSkinProperty lookup(String name) {
         boolean ely=Config.AUTO_ELY_FALLBACK;
-        String key=name.toLowerCase(Locale.ROOT)+":"+ely;
+        String key=name.toLowerCase(Locale.ROOT)+":"+ely+":"+System.identityHashCode(SkinCommand.getMojangAPI());
         synchronized(CACHE) {
             Cached c=CACHE.get(key);
             if(c!=null && c.expires>System.currentTimeMillis()) return c.skin;
@@ -79,9 +83,25 @@ final class LoginSkinLoader {
         CustomSkinProperty p=null;
         try { p=SkinCommand.getMojangAPI().getSkin(name).map(d->d.skinProperty()).orElse(null); }
         catch(Exception e) { EverlastingSkins.logger.debug("Mojang lookup failed for {}",name,e); }
-        if(!usable(p)) p=ely?fetchEly(name):null;
+        if(!hasSkinTexture(p)) p=ely?fetchEly(name):null;
         synchronized(CACHE) { CACHE.put(key,new Cached(p)); }
         return p;
+    }
+    // MojangAPI already requests signed properties; the client verifies their
+    // signature. Check the payload here to distinguish missing skins from a
+    // usable result. For the extra Ely provider verify Mojang's RSA signature too.
+    private static boolean hasSkinTexture(CustomSkinProperty p) {
+        if(p==null || p.isEmpty() || !p.isValid()) return false;
+        try {
+            if(!p.getOriginalProperty().hasSignature()) return false;
+            JsonObject body=new JsonParser().parse(new String(Base64.getDecoder().decode(p.getValue()),StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject textures=body.getAsJsonObject("textures");
+            if(textures==null || !textures.has("SKIN")) return false;
+            URI url=URI.create(textures.getAsJsonObject("SKIN").get("url").getAsString());
+            return ("https".equalsIgnoreCase(url.getScheme())||"http".equalsIgnoreCase(url.getScheme()))
+                && "textures.minecraft.net".equalsIgnoreCase(url.getHost()) && url.getUserInfo()==null
+                && url.getPath().matches("/texture/[a-fA-F0-9]{32,128}");
+        } catch(Exception e) { return false; }
     }
     private static boolean usable(CustomSkinProperty p) {
         if(p==null || p.isEmpty() || !p.isValid()) return false;
