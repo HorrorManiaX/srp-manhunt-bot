@@ -75,7 +75,7 @@ public final class DivineFlood {
         if(state.mode==2) enqueueLoaded();
     }
     @Mod.EventHandler public void stopped(FMLServerStoppedEvent e) {
-        if(boss!=null) boss.removeAllPlayers();
+        if(boss!=null) boss.setVisible(false);
         boss=null; queue.clear(); queued.clear(); done.clear(); state=null; server=null; ticks=0;
     }
 
