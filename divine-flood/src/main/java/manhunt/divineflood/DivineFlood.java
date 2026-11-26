@@ -2,7 +2,6 @@ package manhunt.divineflood;
 
 import java.io.File;
 import java.util.*;
-import io.netty.buffer.ByteBuf;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.command.*;
 import net.minecraft.init.Blocks;
@@ -11,6 +10,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.world.World;
+import net.minecraft.world.BossInfo;
+import net.minecraft.world.BossInfoServer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.storage.MapStorage;
@@ -21,24 +23,18 @@ import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.event.world.ChunkEvent;
 import net.minecraftforge.event.world.ChunkDataEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.common.SidedProxy;
 import net.minecraftforge.fml.common.event.*;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.common.network.NetworkRegistry;
-import net.minecraftforge.fml.common.network.simpleimpl.*;
-import net.minecraftforge.fml.relauncher.Side;
 
-@Mod(modid=DivineFlood.ID, name="Divine Flood", version="1.0.0", acceptedMinecraftVersions="[1.12.2]")
+@Mod(modid=DivineFlood.ID, name="Divine Flood", version="1.1.0", acceptedMinecraftVersions="[1.12.2]", acceptableRemoteVersions="*", serverSideOnly=true)
 public final class DivineFlood {
     public static final String ID="divineflood";
     public static final long THREE_DAYS=259200000L;
     private static final String SAVE="divineflood_event";
     private static final String CHUNK_TAG="DivineFloodCompleted";
-    public static final SimpleNetworkWrapper NET=NetworkRegistry.INSTANCE.newSimpleChannel(ID);
-    @SidedProxy(clientSide="manhunt.divineflood.ClientProxy",serverSide="manhunt.divineflood.DivineFlood$Proxy")
-    public static Proxy proxy;
+    private BossInfoServer boss;
     private MinecraftServer server;
     private State state;
     private int ticks;
@@ -58,9 +54,7 @@ public final class DivineFlood {
         scanPerTick=c.getInt("maxCellsScannedPerTick","performance",4096,64,65536,"Global scan cap.");
         budgetMicros=c.getInt("tickBudgetMicros","performance",3500,250,12000,"Soft wall-clock budget; one block update may overrun.");
         if(c.hasChanged()) c.save();
-        NET.registerMessage(PacketHandler.class,Packet.class,0,Side.CLIENT);
         MinecraftForge.EVENT_BUS.register(this);
-        proxy.init();
     }
 
     @Mod.EventHandler public void starting(FMLServerStartingEvent e) {
@@ -76,10 +70,13 @@ public final class DivineFlood {
             persist();
         }
         ticks=0;
+        boss=new BossInfoServer(new TextComponentString(""),BossInfo.Color.RED,BossInfo.Overlay.PROGRESS);
+        sync();
         if(state.mode==2) enqueueLoaded();
     }
     @Mod.EventHandler public void stopped(FMLServerStoppedEvent e) {
-        queue.clear(); queued.clear(); done.clear(); state=null; server=null; ticks=0;
+        if(boss!=null) boss.removeAllPlayers();
+        boss=null; queue.clear(); queued.clear(); done.clear(); state=null; server=null; ticks=0;
     }
 
     private void persist() {
@@ -89,15 +86,36 @@ public final class DivineFlood {
     private void broadcast(String s) {
         server.getPlayerList().sendMessage(new TextComponentString(s));
     }
-    private Packet packet() {
-        return new Packet(state.mode,Math.max(0L,state.deadline-System.currentTimeMillis()));
+    private void sync() {
+        if(boss==null || state==null) return;
+        if(state.mode!=1 && state.mode!=2) {
+            boss.setVisible(false);
+            return;
+        }
+        if(state.mode==1) {
+            long ms=Math.max(0L,state.deadline-System.currentTimeMillis());
+            long sec=(ms+999)/1000;
+            String time=String.format(Locale.ROOT,"%02dд %02d:%02d:%02d",sec/86400,(sec/3600)%24,(sec/60)%60,sec%60);
+            boss.setName(new TextComponentString("§6§l☦ ВРЕМЯ ИСКУПЛЕНИЯ §r§e"+time));
+            boss.setColor(BossInfo.Color.RED);
+            boss.setPercent(Math.min(1f,ms/(float)THREE_DAYS));
+        } else {
+            boss.setName(new TextComponentString("§4§l☦ ГНЕВ БОЖИЙ §r§6— ВСЕМИРНЫЙ ПОТОП"));
+            boss.setColor(BossInfo.Color.RED);
+            boss.setPercent(1f);
+        }
+        boss.setVisible(true);
     }
-    private void sync() { NET.sendToAll(packet()); }
     @SubscribeEvent public void join(PlayerEvent.PlayerLoggedInEvent e) {
-        if(state!=null && e.player instanceof net.minecraft.entity.player.EntityPlayerMP)
-            NET.sendTo(packet(),(net.minecraft.entity.player.EntityPlayerMP)e.player);
+        if(boss!=null && e.player instanceof EntityPlayerMP) {
+            sync();
+            boss.addPlayer((EntityPlayerMP)e.player);
+        }
     }
-
+    @SubscribeEvent public void logout(PlayerEvent.PlayerLoggedOutEvent e) {
+        if(boss!=null && e.player instanceof EntityPlayerMP)
+            boss.removePlayer((EntityPlayerMP)e.player);
+    }
     private void activate() {
         state.mode=2; persist(); enqueueLoaded(); sync();
         broadcast("§6§lГНЕВ БОЖИЙ §r§cВремя милосердия истекло. Начался Всемирный потоп.");
@@ -135,8 +153,8 @@ public final class DivineFlood {
         if(++ticks>=20) {
             ticks=0;
             if(state.mode==1 && System.currentTimeMillis()>=state.deadline) activate();
+            else if(state.mode==1) sync();
         }
-        if(state.mode==1 && ticks==0 && server.getTickCounter()%600<20) sync();
         if(state.mode==2 && !queue.isEmpty()) floodTick();
     }
     private void floodTick() {
@@ -217,18 +235,4 @@ public final class DivineFlood {
         }
     }
 
-    public static class Proxy {
-        public void init() {}
-        public void receive(Packet p) {}
-    }
-    public static final class Packet implements IMessage {
-        int mode; long remaining;
-        public Packet() {}
-        Packet(int m,long r){mode=m;remaining=r;}
-        @Override public void toBytes(ByteBuf b){b.writeByte(mode);b.writeLong(remaining);}
-        @Override public void fromBytes(ByteBuf b){mode=b.readUnsignedByte();remaining=b.readLong();}
-    }
-    public static final class PacketHandler implements IMessageHandler<Packet,IMessage> {
-        @Override public IMessage onMessage(Packet p,MessageContext ctx){proxy.receive(p);return null;}
-    }
 }

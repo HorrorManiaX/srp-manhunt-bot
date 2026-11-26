@@ -28,6 +28,6 @@ jobs:
         run: gradle --no-daemon clean build --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: DivineFlood-1.0.0
-          path: divine-flood/build/libs/DivineFlood-1.0.0.jar
+          name: DivineFlood-1.1.0
+          path: divine-flood/build/libs/DivineFlood-1.1.0.jar
           if-no-files-found: error
