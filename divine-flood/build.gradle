@@ -1,0 +1,14 @@
+buildscript {
+    repositories { mavenCentral(); maven { url = 'https://maven.minecraftforge.net/' } }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:5.1.+' }
+}
+apply plugin: 'java'
+apply plugin: 'net.minecraftforge.gradle'
+group = 'manhunt.divineflood'
+version = '1.0.0'
+java.toolchain.languageVersion = JavaLanguageVersion.of(8)
+compileJava.options.encoding = 'UTF-8'
+minecraft { mappings channel: 'stable', version: '39-1.12' }
+repositories { mavenCentral(); maven { url = 'https://maven.minecraftforge.net/' } }
+dependencies { minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2860' }
+jar.finalizedBy('reobfJar')
