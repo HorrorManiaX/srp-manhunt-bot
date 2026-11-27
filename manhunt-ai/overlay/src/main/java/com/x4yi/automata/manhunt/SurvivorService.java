@@ -64,9 +64,16 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | remove <name> | clear | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | remove <name> | clear | goal <name> <item-id|clear> | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        if(args.length==3 && args[0].equals("goal")){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null)throw new CommandException("AI survivor not found");
+            if(args[2].equals("clear")){bot.clearTechGoal();return;}
+            if(!bot.techGoal(new ResourceLocation(args[2])))throw new CommandException("Unknown or disallowed technology goal");
+            sender.sendMessage(new TextComponentString("Goal queued; enable autonomous work with /manhuntai auto "+args[1]+" on"));return;
+        }
         if(args.length==3 && args[0].equals("auto")){
             SurvivorPlayer bot=bots.get(key(args[1]));
             if(bot==null)throw new CommandException("AI survivor not found");
