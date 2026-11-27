@@ -68,6 +68,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(constructionStock()<4&&missingWallBlocks()>0)return SurvivorHelpPolicy.Need.MATERIALS;
         return null;
     }
+    int continuationPriority(SurvivorPlayer caller,boolean combat){
+        if(combat&&caller==helpCaller&&target!=null&&target==caller.target&&getHealth()>=getMaxHealth()*.65f&&!dangerousHere())return 10;
+        return helpPriority();
+    }
     boolean canHelpSafely(boolean combat){return !stressed&&!dangerousHere()&&getHealth()>=getMaxHealth()*.65f&&getFoodStats().getFoodLevel()>=8&&(combat||target==null);}
     void assist(SurvivorPlayer caller,boolean combat){
         if(helpCaller!=caller||helpCombat!=combat){helpCaller=caller;helpCombat=combat;invalidateRoute();}
@@ -242,7 +246,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(buildGoal==null)return null;
         if(age<nextBuildApproach&&buildApproach!=null&&standable(buildApproach))return buildApproach;
         nextBuildApproach=age+20;buildApproach=null;double best=Double.MAX_VALUE;
-        for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)for(int dy=-1;dy<=0;dy++){
+        for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)for(int dy=-2;dy<=0;dy++){
             if(x==0&&z==0)continue;
             BlockPos p=buildGoal.add(x,dy,z);
             if(!standable(p)||p.distanceSq(home)>144)continue;
@@ -265,7 +269,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     int missingWallBlocks(){
         int missing=0;
-        for(var offset:SurvivorBlueprint.perimeter(0,1,2)){
+        for(var offset:SurvivorBlueprint.shelter()){
             BlockPos p=home.add(offset.x(),offset.y(),offset.z());
             if(world.isBlockLoaded(p)&&world.isAirBlock(p))missing++;
         }
@@ -278,19 +282,30 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(available<4)return;
         // Keep basic crafting stock available while repairing the perimeter.
         available=Math.max(0,available-4);if(available==0)return;
-        for(var offset:SurvivorBlueprint.perimeter(0,1,2)){
+        for(var offset:SurvivorBlueprint.shelter()){
             if(available<=0)break;
             BlockPos p=home.add(offset.x(),offset.y(),offset.z());
             if(!world.isBlockLoaded(p)||!world.isBlockLoaded(p.down())||!world.isAirBlock(p)||!SurvivorPermissions.allowed(this,p,true))continue;
-            if(!CellClassifier.isSolidSupport(world,p.down())&& !fortification.contains(p.down()))continue;
+            if(!hasBuildSupport(p)&&!fortification.contains(p.down())&&!queuedNeighbor(p))continue;
             fortification.add(p);available--;
         }
+    }
+    private boolean hasBuildSupport(BlockPos p){
+        for(EnumFacing f:EnumFacing.values()){
+            BlockPos q=p.offset(f);
+            if(world.isBlockLoaded(q)&&world.getBlockState(q).isFullCube()&&SurvivorPermissions.allowed(this,q,true))return true;
+        }
+        return false;
+    }
+    private boolean queuedNeighbor(BlockPos p){
+        for(EnumFacing f:EnumFacing.HORIZONTALS)if(fortification.contains(p.offset(f)))return true;
+        return false;
     }
     private void planFortification() {
         if(buildGoal!=null && age>=buildDeadline){buildGoal=null;buildApproach=null;skippedBlocks++;invalidateRoute();}
         if(buildGoal==null && !fortification.isEmpty() && age%20==1) {
             BlockPos p=fortification.removeFirst();
-            if(!world.isBlockLoaded(p.down())||!CellClassifier.isSolidSupport(world,p.down())||!requestBuild(p))skippedBlocks++;
+            if(!hasBuildSupport(p)||!requestBuild(p))skippedBlocks++;
         }
     }
     public String reply(String message) {
@@ -374,7 +389,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     public void drive() {
         if (!isEntityAlive()) return;
         age++;
-        planDefenseRepair();planFortification();
+        planFortification();
         if(age>=nextInventoryScan) {
             nextInventoryScan=age+10;
             if(target==null&&!stressed&&age%100<10)equipVanillaArmor();
@@ -396,6 +411,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         var action=SurvivorBrain.choose(new SurvivorBrain.Situation(getHealth(),getMaxHealth(),getFoodStats().needFood(),foodSlot>=0,
             target!=null,visible,gunSlot>=0,findMelee()>=0,target==null?Double.MAX_VALUE:getDistanceSq(target),
             profile.preferredMinRangeSq(),profile.fleeWhenSwelling(),dangerousHere(),buildGoal!=null,loot!=null));
+        if(target==null&&action==SurvivorBrain.Action.PATROL)planDefenseRepair();
         if(target!=null&&action!=SurvivorBrain.Action.EVADE){
             if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),gunSlot>=0,getHeldItemOffhand().getItem()==Items.SHIELD)) action=SurvivorBrain.Action.RETREAT;
             else if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
@@ -412,6 +428,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         else work.interrupt();
         BlockPos jobGoal=assistance!=null?assistance:furnace.active()&&furnace.destination()!=null?furnace.destination():foodRecovery.destination()!=null?foodRecovery.destination():work.destination();
         if(assistance!=null&&action==SurvivorBrain.Action.BUILD){action=SurvivorBrain.Action.PATROL;activity="assist";}
+        if(assistance!=null&&action==SurvivorBrain.Action.PATROL)activity="assist";
         if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null)nextPlan=0;
         if(action==SurvivorBrain.Action.PATROL && gunSlot<0 && age>=nextReload && !stressed){
             nextReload=age+100;
