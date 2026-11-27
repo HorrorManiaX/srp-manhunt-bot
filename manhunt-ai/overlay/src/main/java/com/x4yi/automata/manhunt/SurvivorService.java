@@ -188,7 +188,7 @@ public final class SurvivorService extends CommandBase {
         for (SurvivorPlayer bot : new ArrayList<>(bots.values())) {
             MinecraftServer server = bot.getServer();
             if (server == null) continue;
-            if (!bot.isEntityAlive() || server.getPlayerList().getPlayerByUsername(bot.getName()) != null) { remove(server, bot); continue; }
+            if (!bot.isEntityAlive() || com.x4yi.automata.compat.ManhuntCompat.isParasite(bot) || server.getPlayerList().getPlayerByUsername(bot.getName()) != null) { remove(server, bot); continue; }
             try { bot.setStressed(stressed || (System.nanoTime()-start)>4_000_000L); bot.drive(); } catch (RuntimeException | LinkageError e) {
                 AutomataMod.LOGGER.error("Manhunt AI disabled after error: " + bot.getName(), e);
                 remove(server, bot);
