@@ -10,7 +10,8 @@ import net.minecraftforge.fml.common.registry.ForgeRegistries;
 /** One real craft per plan; no machine recipes, no fake items, no unbounded search. */
 final class SurvivorTechnology {
     private static final Set<String> ALLOWED=Set.of("minecraft","thermalfoundation","thermalexpansion","thermaldynamics","openmodularturrets","modularwarfare");
-    private static final int MAX_DEPTH=5,MAX_NODES=32;
+    private static final int MAX_DEPTH=5,MAX_NODES=24;
+    private long stopNanos;
     private final SurvivorPlayer bot;
     private Item goal;
     private String missing="";
@@ -29,18 +30,18 @@ final class SurvivorTechnology {
     boolean step(boolean table){
         if(goal==null)return false;
         if(count(goal)>0){clear();return false;}
-        missing="";
+        missing="";stopNanos=System.nanoTime()+2_000_000L;
         boolean progress=produce(goal,table,0,new int[]{MAX_NODES},new HashSet<>());
         if(count(goal)>0)clear();
         return progress;
     }
     private boolean produce(Item item,boolean table,int depth,int[] budget,Set<Item> chain){
         ResourceLocation itemId=item.getRegistryName();
-        if(depth>MAX_DEPTH||budget[0]--<=0||itemId==null||!ALLOWED.contains(itemId.getNamespace())||!chain.add(item))return false;
+        if(System.nanoTime()>=stopNanos||depth>MAX_DEPTH||budget[0]--<=0||itemId==null||!ALLOWED.contains(itemId.getNamespace())||!chain.add(item))return false;
         try{
             int examined=0;
             for(ResourceLocation recipeId:SurvivorCrafting.recipesFor(item)){
-                if(++examined>12||budget[0]--<=0)break;
+                if(System.nanoTime()>=stopNanos||++examined>12||budget[0]--<=0)break;
                 if(!ALLOWED.contains(recipeId.getNamespace()))continue;
                 IRecipe recipe=ForgeRegistries.RECIPES.getValue(recipeId);
                 int size=table?3:2;
