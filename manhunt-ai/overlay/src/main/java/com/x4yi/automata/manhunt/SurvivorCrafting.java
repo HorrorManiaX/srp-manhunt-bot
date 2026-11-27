@@ -79,8 +79,8 @@ final class SurvivorCrafting {
         if (r == null || r.isDynamic()) return false;
         List<Ingredient> ingredients = r.getIngredients();
         int size=table?3:2;
-        int w = r instanceof IShapedRecipe<?> shaped ? shaped.getRecipeWidth() : size;
-        int h = r instanceof IShapedRecipe<?> shaped ? shaped.getRecipeHeight() : size;
+        int w = r instanceof IShapedRecipe shaped ? shaped.getRecipeWidth() : size;
+        int h = r instanceof IShapedRecipe shaped ? shaped.getRecipeHeight() : size;
         if (w < 1 || h < 1 || w > size || h > size || ingredients.isEmpty() || ingredients.size() > size*size || ingredients.size() > w*h || !r.canFit(size,size)) return false;
         List<ItemStack> stock = new ArrayList<>();
         for (int i=0; i<36; i++) stock.add(bot.inventory.getStackInSlot(i).copy());
