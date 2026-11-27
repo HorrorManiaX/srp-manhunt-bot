@@ -200,7 +200,7 @@ public final class SurvivorService extends CommandBase {
             if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||bots.size()>=MAX||bots.containsKey(k)||server.getPlayerList().getPlayerByUsername(name)!=null)throw new CommandException("AI identity or capacity conflict");
             BlockPos pos=SurvivorRoster.position(snapshot),home=SurvivorRoster.home(snapshot);
             if(!standable(world,pos))throw new CommandException("Saved position unavailable; load its chunk and clear the position first");
-            UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+savedName).getBytes(StandardCharsets.UTF_8));
+            UUID uuid=SurvivorRoster.uuid(snapshot);
             SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
             bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);
             SurvivorRoster.restore(bot,snapshot);
@@ -344,7 +344,7 @@ public final class SurvivorService extends CommandBase {
         if(n==null)return false;
         String savedName=n.getString("name"),name=plainName(savedName);BlockPos pos=SurvivorRoster.position(n),home=SurvivorRoster.home(n);
         if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos)||!world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(16),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty())return false;
-        UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+savedName).getBytes(StandardCharsets.UTF_8));
+        UUID uuid=SurvivorRoster.uuid(n);
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
         bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);SurvivorRoster.restore(bot,n);
         roster.forget(k);
