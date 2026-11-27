@@ -22,6 +22,8 @@ jobs:
           repository: X4yii/Automata
           ref: 5bf94f646ff6cc0fb07b20c1067f9c393d451225
           path: automata-upstream
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - name: Apply Manhunt overlay
         run: python3 manhunt-ai/apply_overlay.py automata-upstream
