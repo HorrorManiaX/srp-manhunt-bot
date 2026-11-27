@@ -21,7 +21,8 @@ final class SurvivorFurnace {
     private TileEntityFurnace owned;
     private Item goal;
     private ItemStack expected=ItemStack.EMPTY;
-    private boolean running;
+    private boolean running,ownFuel;
+    private int expires;
     private int nextCheck;
     private String status="idle";
     SurvivorFurnace(SurvivorPlayer bot){this.bot=bot;}
@@ -37,20 +38,21 @@ final class SurvivorFurnace {
             if(!s.isEmpty()&&s.getItem()==item&&!FurnaceRecipes.instance().getSmeltingResult(s).isEmpty()){valid=true;break;}
         }
         if(!valid)return false;
-        goal=item;status="queued";return true;
+        if(!validStation()){boolean carried=false;for(int i=0;i<36;i++)if(bot.inventory.getStackInSlot(i).getItem()==Item.getItemFromBlock(Blocks.FURNACE)){carried=true;break;}if(!carried)return false;}
+        goal=item;expires=0;status="queued";return true;
     }
     void placed(BlockPos pos){
         if(station!=null&&owned!=null&&!owned.isInvalid())return;
         if(!bot.world.isBlockLoaded(pos))return;
         if(bot.world.getBlockState(pos).getBlock()==Blocks.FURNACE&&bot.world.getTileEntity(pos) instanceof TileEntityFurnace furnace){
-            station=pos.toImmutable();owned=furnace;
+            station=pos.toImmutable();owned=furnace;ownFuel=false;
         }
     }
     boolean validStation(){
         return station!=null&&bot.world.isBlockLoaded(station)&&owned!=null&&!owned.isInvalid()&&bot.world.getTileEntity(station)==owned
             &&SurvivorPermissions.interact(bot,station);
     }
-    private boolean emptyStation(){return owned.getStackInSlot(0).isEmpty()&&owned.getStackInSlot(1).isEmpty()&&owned.getStackInSlot(2).isEmpty();}
+    private boolean emptyStation(){ItemStack fuel=owned.getStackInSlot(1);return owned.getStackInSlot(0).isEmpty()&&owned.getStackInSlot(2).isEmpty()&&(fuel.isEmpty()||(ownFuel&&fuel.getItem()==Items.COAL&&fuel.getCount()==1));}
     private void stop(String reason){goal=null;running=false;expected=ItemStack.EMPTY;destination=null;status=reason;}
     private BlockPos adjacent(BlockPos p){
         BlockPos best=null;double d=Double.MAX_VALUE;
@@ -78,6 +80,8 @@ final class SurvivorFurnace {
     void tick(int age){
         if(!active()||age<nextCheck)return;
         nextCheck=age+20;
+        if(expires==0)expires=age+1200;
+        if(age>=expires){stop("production timeout; remaining contents left in world");return;}
         if(!validStation()){
             if(running){stop("station unavailable; contents left in world");return;}
             status="requires own furnace";destination=null;queueStation();return;
@@ -107,11 +111,12 @@ final class SurvivorFurnace {
             if(input<0&&s.getItem()==goal&&!FurnaceRecipes.instance().getSmeltingResult(s).isEmpty())input=i;
             if(fuel<0&&s.getItem()==Items.COAL&&TileEntityFurnace.isItemFuel(s))fuel=i;
         }
-        if(input<0||fuel<0||input==fuel){status="needs input and coal";return;}
-        ItemStack source=bot.inventory.getStackInSlot(input),coal=bot.inventory.getStackInSlot(fuel);
+        boolean needFuel=owned.getField(0)<200&&owned.getStackInSlot(1).isEmpty();
+        if(input<0||(needFuel&&(fuel<0||input==fuel))){status="needs input and coal";return;}
+        ItemStack source=bot.inventory.getStackInSlot(input);
         expected=FurnaceRecipes.instance().getSmeltingResult(source).copy();
-        ItemStack one=source.splitStack(1),oneFuel=coal.splitStack(1);
-        owned.setInventorySlotContents(0,one);owned.setInventorySlotContents(1,oneFuel);
+        owned.setInventorySlotContents(0,source.splitStack(1));
+        if(needFuel){owned.setInventorySlotContents(1,bot.inventory.getStackInSlot(fuel).splitStack(1));ownFuel=true;}
         owned.markDirty();bot.inventory.markDirty();running=true;status="smelting";
     }
 }
