@@ -28,6 +28,7 @@ import net.minecraft.world.WorldServer;
 /** Experimental server-side player body; no remote account or real-player login. */
 public final class SurvivorPlayer extends EntityPlayerMP {
     private final BlockPos home;
+    private final it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap routeFailures=new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap();
     private final SurvivorWork work;
     private final SurvivorFurnace furnace;
     private final SurvivorFood foodRecovery;
@@ -201,11 +202,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     void explosionAlert(BlockPos pos) {
         alert(null,pos); explosionUntil=age+30; nextEvade=age; escapeGoal=null;
     }
-    private boolean standable(BlockPos p) {
-        return world.isBlockLoaded(p) && world.isBlockLoaded(p.up()) && world.isBlockLoaded(p.down())
-            && CellClassifier.isPassable(world,p) && CellClassifier.isPassable(world,p.up())
-            && CellClassifier.isSolidSupport(world,p.down()) && !world.getBlockState(p).getMaterial().isLiquid();
-    }
+    private boolean standable(BlockPos p) { return SurvivorTerrain.stand(world,p); }
     private boolean dangerousHere() {
         BlockPos p=getPosition();
         return age<explosionUntil || isBurning() || isInLava() || (world.isBlockLoaded(p) && world.getBlockState(p).getBlock()==net.minecraft.init.Blocks.FIRE);
@@ -319,7 +316,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     int missingWallBlocks(){
         int missing=0;
-        for(var offset:SurvivorBlueprint.shelter()){
+        for(var offset:SurvivorStrongholdPlan.structure()){
             BlockPos p=home.add(offset.x(),offset.y(),offset.z());
             if(world.isBlockLoaded(p)&&world.isAirBlock(p))missing++;
         }
@@ -332,7 +329,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(available<4)return;
         // Keep basic crafting stock available while repairing the perimeter.
         available=Math.max(0,available-4);if(available==0)return;
-        for(var offset:SurvivorBlueprint.shelter()){
+        for(var offset:SurvivorStrongholdPlan.structure()){
             if(available<=0)break;
             BlockPos p=home.add(offset.x(),offset.y(),offset.z());
             if(!world.isBlockLoaded(p)||!world.isBlockLoaded(p.down())||!world.isAirBlock(p)||!SurvivorPermissions.allowed(this,p,true))continue;
@@ -499,7 +496,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         if(moveForward!=0 && Math.abs(posX-lastX)+Math.abs(posZ-lastZ)<.025) stuckTicks++; else stuckTicks=0;
         lastX=posX;lastZ=posZ;
-        if(stuckTicks>16) {invalidateRoute();stuckTicks=0;}
+        if(stuckTicks>16) {if(step<path.length())markRouteFailure(path.getStep(step));invalidateRoute();stuckTicks=0;}
         if (pending != null && pending.isDone()) {
             try { path = pending.getNow(PathResult.EMPTY); } catch (RuntimeException e) { path = PathResult.EMPTY; }
             pending = null; step = 0;
@@ -510,7 +507,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
-                        new PathfindingSettings(false, false, false, 2048, 2, 0, 10_000_000L), cancelled);
+                        new PathfindingSettings(false,false,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
             }
         }
         moveForward = 0; moveStrafing = 0;
@@ -583,7 +580,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     private boolean safeFootstep(double dx,double dz){
         BlockPos p=new BlockPos(posX+dx,posY,posZ+dz);
-        return standable(p)&&world.getWorldBorder().contains(p)&&!world.getBlockState(p.down()).getMaterial().isLiquid();
+        return SurvivorTerrain.safeStep(world,posX,posY,posZ,dx,dz);
     }
     private void combatFootwork(EntityLivingBase enemy,boolean ranged){
         if(enemy==null||!onGround)return;
@@ -616,20 +613,49 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         return home;
     }
+    private void markRouteFailure(long packed){
+        if(routeFailures.size()>=64)routeFailures.clear();
+        routeFailures.put(packed,Math.min(40,routeFailures.get(packed)+8));
+    }
+    private boolean openRouteDoor(BlockPos p){
+        if(!world.isBlockLoaded(p)||!SurvivorPermissions.interact(this,p))return false;
+        var state=world.getBlockState(p);var block=state.getBlock();
+        if(!(block instanceof net.minecraft.block.BlockDoor||block instanceof net.minecraft.block.BlockFenceGate)||state.getMaterial()==net.minecraft.block.material.Material.IRON)return false;
+        var hit=world.rayTraceBlocks(getPositionEyes(1),new net.minecraft.util.math.Vec3d(p).add(.5,.5,.5),false,true,false);
+        if(hit==null||!p.equals(hit.getBlockPos())||getDistanceSqToCenter(p)>16)return false;
+        return interactionManager.processRightClickBlock(this,world,getHeldItemMainhand(),EnumHand.MAIN_HAND,p,hit.sideHit,(float)(hit.hitVec.x-p.getX()),(float)(hit.hitVec.y-p.getY()),(float)(hit.hitVec.z-p.getZ()))==EnumActionResult.SUCCESS;
+    }
     private void followPath() {
-        while (step < path.length()) {
-            long packed = path.getStep(step);
-            BlockPos p = new BlockPos(PackedPos.unpackX(packed), PackedPos.unpackY(packed), PackedPos.unpackZ(packed));
-            double dx = p.getX() + .5 - posX, dz = p.getZ() + .5 - posZ;
-            if (dx * dx + dz * dz < .20 && Math.abs(p.getY() - posY) < .65) { step++; continue; }
-            byte action = path.getAction(step);
-            if (!world.isBlockLoaded(p) || action > PathNodeAction.FALL) { path = PathResult.EMPTY; return; }
-            lookAt(p.getX() + .5, posY + getEyeHeight(), p.getZ() + .5);
-            moveForward = .75F;
-            if (onGround && (action == PathNodeAction.JUMP || p.getY() > posY + .4)) jump();
+        while(step<path.length()){
+            long packed=path.getStep(step);
+            BlockPos p=new BlockPos(PackedPos.unpackX(packed),PackedPos.unpackY(packed),PackedPos.unpackZ(packed));
+            double dx=p.getX()+.5-posX,dz=p.getZ()+.5-posZ,dy=p.getY()-posY;
+            double distance=Math.hypot(dx,dz);
+            if(distance<.30&&Math.abs(dy)<.55){step++;continue;}
+            byte action=path.getAction(step);
+            if(!world.isBlockLoaded(p)||action>PathNodeAction.FALL||SurvivorTerrain.hazardous(world,p)||SurvivorTerrain.hazardous(world,p.up())||SurvivorTerrain.hazardous(world,p.down())){
+                markRouteFailure(packed);invalidateRoute();return;
+            }
+            float desired=(float)Math.toDegrees(Math.atan2(dz,dx))-90;
+            lookAt(p.getX()+.5,posY+getEyeHeight(),p.getZ()+.5);
+            if(Math.abs(MathHelper.wrapDegrees(desired-rotationYaw))>25)return;
+            double probe=Math.min(.75,distance),ux=distance<.01?0:dx/distance,uz=distance<.01?0:dz/distance;
+            BlockPos near=new BlockPos(posX+ux*probe,posY,posZ+uz*probe);
+            if(action==PathNodeAction.WALK&&!SurvivorTerrain.safeStep(world,posX,posY,posZ,ux*probe,uz*probe)){
+                if(openRouteDoor(near)||openRouteDoor(near.up()))return;
+                markRouteFailure(packed);invalidateRoute();return;
+            }
+            if(action==PathNodeAction.FALL&&(dy< -2.5||!standable(p))||action==PathNodeAction.JUMP&&(!standable(p)||dy>1.6)){
+                markRouteFailure(packed);invalidateRoute();return;
+            }
+            if((action==PathNodeAction.JUMP||action==PathNodeAction.FALL)&&distance>2.2){markRouteFailure(packed);invalidateRoute();return;}
+            moveForward=.75f;
+            if(onGround&&(action==PathNodeAction.JUMP||dy>.4))jump();
             return;
         }
+        if(!path.isComplete()&&plannedGoal!=null)nextPlan=Math.min(nextPlan,age+5);
     }
+
     private void lookAt(double x, double y, double z) {
         double dx = x - posX, dz = z - posZ, dy = y - posY - getEyeHeight();
         float yaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90F;
