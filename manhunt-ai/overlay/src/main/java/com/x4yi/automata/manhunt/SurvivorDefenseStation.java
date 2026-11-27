@@ -43,7 +43,14 @@ final class SurvivorDefenseStation {
             if(energy==null)energy=tile.getCapability(CapabilityEnergy.ENERGY,null);
             String rf=energy==null?"RF unknown":"RF "+energy.getEnergyStored()+"/"+energy.getMaxEnergyStored();
             status=rf;
-            int slot=ammoSlot();if(slot<0){approach=null;status+="; no carried ammo";return;}
+            int slot=ammoSlot();if(slot<0){
+                approach=null;status+="; no carried ammo";
+                if(SurvivorCrafting.nearbyBench(bot)){
+                    var item=net.minecraftforge.fml.common.registry.ForgeRegistries.ITEMS.getValue(ammo);
+                    if(item!=null){int tried=0;for(var recipe:SurvivorCrafting.recipesFor(item)){if(++tried>3)break;if(SurvivorCrafting.craft(bot,recipe,true)){status+="; crafted ammo";break;}}}
+                }
+                return;
+            }
             if(bot.getDistanceSqToCenter(station)>16){
                 approach=null;double d=Double.MAX_VALUE;
                 for(EnumFacing f:EnumFacing.HORIZONTALS){BlockPos p=station.offset(f);if(SurvivorTerrain.stand(bot.world,p)&&bot.getDistanceSqToCenter(p)<d){approach=p;d=bot.getDistanceSqToCenter(p);}}
