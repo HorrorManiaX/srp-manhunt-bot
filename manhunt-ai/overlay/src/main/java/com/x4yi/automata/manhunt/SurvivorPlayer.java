@@ -34,6 +34,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private final SurvivorSeason season;
     private final SurvivorTurret autoTurret;
     private final SurvivorVehicles vehicles;
+    private final SurvivorArena arena;
     private final SurvivorLavaTrap lavaTrap;
     private final SurvivorDefenseStation defenseStation;
     private final SurvivorFood foodRecovery;
@@ -129,7 +130,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         this.home = pos;
         this.work=new SurvivorWork(this,pos);
         this.furnace=new SurvivorFurnace(this);
-        season=new SurvivorSeason(this);autoTurret=new SurvivorTurret(this);vehicles=new SurvivorVehicles(this);
+        season=new SurvivorSeason(this);autoTurret=new SurvivorTurret(this);vehicles=new SurvivorVehicles(this);arena=new SurvivorArena(this);
         this.lavaTrap=new SurvivorLavaTrap(this);this.defenseStation=new SurvivorDefenseStation(this);
         this.foodRecovery=new SurvivorFood(this);
         this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
@@ -163,7 +164,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         return new net.minecraft.util.text.TextComponentString(getName()+" [ИИ]");
     }
     BlockPos homePosition(){return home;}
-    boolean seasonWork(int age){return season.plan(age);}
+    boolean seasonWork(int age){return season.plan(age)||arena.plan(age);}
+    boolean arenaSpecimen(){return arena.hasSpecimen();}
+    boolean prepareArena(BlockPos p){return arena.request(p);}
     boolean turretWork(int age){return autoTurret.plan(age);}
     boolean vehicleWork(int age){return vehicles.plan(age);}
     boolean vehicleGoal(net.minecraft.util.ResourceLocation id){return vehicles.request(id);}
@@ -184,7 +187,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         nextVictoryChat=age+400;
         for(EntityPlayerMP p:getServer().getPlayerList().getPlayers())if(p.world==world&&p.getDistanceSq(this)<=256&&!ManhuntCompat.isHostile(p))p.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+getName()+": противник уничтожен. Проверяю окрестности."));
     }
-    public String activity() { return "order="+combatOrder+"/kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus()+"/season="+season.status()+"/OMT="+autoTurret.status()+"/MCH="+vehicles.status(); }
+    public String activity() { return "order="+combatOrder+"/kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus()+"/season="+season.status()+"/OMT="+autoTurret.status()+"/MCH="+vehicles.status()+"/arena="+arena.status(); }
     boolean hasFurnaceStation(){return furnace.validStation();}
     boolean furnaceBusy(){return furnace.active();}
     void industry(boolean enabled){work.industry(enabled);invalidateRoute();}
