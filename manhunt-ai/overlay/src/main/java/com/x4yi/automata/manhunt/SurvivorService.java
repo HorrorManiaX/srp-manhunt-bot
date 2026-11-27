@@ -261,7 +261,7 @@ public final class SurvivorService extends CommandBase {
             String prefix="@"+bot.getName();
             if(!msg.regionMatches(true,0,prefix,0,prefix.length()) || (msg.length()>prefix.length() && !Character.isWhitespace(msg.charAt(prefix.length())))) continue;
             String reply=bot.reply(msg.substring(prefix.length()));
-            if(reply!=null && dialogue.offer(key(bot.getName()),bot.getEntityId(),event.getPlayer().getUniqueID(),bot.activity()+"; здоровье "+bot.getHealth()+"/"+bot.getMaxHealth(),msg.substring(prefix.length()),reply))break;
+            if(reply!=null && dialogue.offer(key(bot.getName()),bot.getEntityId(),event.getPlayer().getUniqueID(),bot.dialogueContext(),msg.substring(prefix.length()),reply))break;
             if(reply!=null) {
                 for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
                     player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
@@ -289,6 +289,7 @@ public final class SurvivorService extends CommandBase {
                 remove(server, bot);
             }
         }
+        if(!stressed&&ticks%100==0&&(System.nanoTime()-start)<2_000_000L)SurvivorSquad.coordinate(new ArrayList<>(bots.values()),ticks/100);
         meanAiMs=meanAiMs*.95+(System.nanoTime()-start)/1_000_000.0*.05;
     }
 }
