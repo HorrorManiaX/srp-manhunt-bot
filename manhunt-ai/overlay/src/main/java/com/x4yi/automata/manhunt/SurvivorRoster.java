@@ -9,7 +9,7 @@ import net.minecraft.world.storage.WorldSavedData;
 /** Explicit park/resume snapshots; separate from authenticated player saves. */
 public final class SurvivorRoster extends WorldSavedData {
     private static final String KEY="manhunt_ai_roster_v1";
-    private NBTTagCompound parked=new NBTTagCompound();
+    private NBTTagCompound parked=new NBTTagCompound(), recruited=new NBTTagCompound();
     public SurvivorRoster(){super(KEY);}
     public SurvivorRoster(String name){super(name);}
     static SurvivorRoster get(WorldServer world){
@@ -18,6 +18,8 @@ public final class SurvivorRoster extends WorldSavedData {
         if(roster==null){roster=new SurvivorRoster();storage.setData(KEY,roster);}
         return roster;
     }
+    boolean recruited(String key){return recruited.getBoolean(key);}
+    void markRecruited(String key){recruited.setBoolean(key,true);markDirty();}
     boolean contains(String key){return parked.hasKey(key,10);}
     boolean park(String key,SurvivorPlayer bot){
         if(contains(key)||parked.getKeySet().size()>=32||!bot.isEntityAlive())return false;
@@ -52,6 +54,6 @@ public final class SurvivorRoster extends WorldSavedData {
         if(!goal.isEmpty())bot.techGoal(new net.minecraft.util.ResourceLocation(goal));
         bot.inventory.markDirty();
     }
-    @Override public void readFromNBT(NBTTagCompound n){parked=n.getCompoundTag("parked");}
-    @Override public NBTTagCompound writeToNBT(NBTTagCompound n){n.setTag("parked",parked);return n;}
+    @Override public void readFromNBT(NBTTagCompound n){parked=n.getCompoundTag("parked");recruited=n.getCompoundTag("recruited");}
+    @Override public NBTTagCompound writeToNBT(NBTTagCompound n){n.setTag("parked",parked);n.setTag("recruited",recruited);return n;}
 }
