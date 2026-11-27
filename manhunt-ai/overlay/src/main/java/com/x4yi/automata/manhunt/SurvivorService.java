@@ -383,6 +383,14 @@ public final class SurvivorService extends CommandBase {
         statusOriginal=null;statusPublished=null;lastStatusNames="";
         if(server!=null)for(WorldServer world:server.worlds)if(world!=null)world.getPerWorldStorage().saveAllData();
     }
+    void showParticipants(MinecraftServer server,ICommandSender sender){
+        java.util.List<String> humans=new ArrayList<>(),agents=new ArrayList<>();
+        for(EntityPlayerMP p:server.getPlayerList().getPlayers())humans.add(p.getName());
+        for(SurvivorPlayer bot:bots.values())if(bot.isEntityAlive())agents.add(bot.getName());
+        sender.sendMessage(new TextComponentString("Участники мира: "+(humans.size()+agents.size())));
+        sender.sendMessage(new TextComponentString("Игроки ("+humans.size()+"): "+(humans.isEmpty()?"—":String.join(", ",humans))));
+        sender.sendMessage(new TextComponentString("Агенты ИИ ("+agents.size()+"): "+(agents.isEmpty()?"—":String.join(", ",agents))));
+    }
     private static String plainName(String name){
         return name.regionMatches(true,0,"AI_",0,3)?name.substring(3):name;
     }
@@ -436,6 +444,7 @@ public final class SurvivorService extends CommandBase {
             SurvivorPlayer conflict=bots.get(key(player.getName()));
             if(conflict!=null&&conflict.getName().equalsIgnoreCase(player.getName())){population.suppress(conflict.getName());remove(player.getServer(),conflict);}
             for (SurvivorPlayer bot : bots.values()) player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
+            player.sendMessage(new TextComponentString("В мире действуют игровые персонажи под управлением ИИ. Состав участников: /participants"));
         }
     }
     private int nextHumanHelp;
