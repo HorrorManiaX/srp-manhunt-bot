@@ -223,6 +223,13 @@ public final class SurvivorService extends CommandBase {
     boolean activeName(String name){return bots.containsKey(key(name));}
     boolean parkedElsewhere(MinecraftServer server,String k){for(WorldServer w:server.worlds)if(w!=null&&w.provider.getDimension()!=0&&SurvivorRoster.get(w).contains(k))return true;return false;}
     BlockPos overworldCamp(WorldServer world){for(SurvivorPlayer bot:bots.values())if(bot.world==world)return bot.homePosition();return null;}
+    java.util.List<BlockPos> safeHumanAnchors(WorldServer world){
+        var out=new ArrayList<BlockPos>();
+        for(EntityPlayerMP p:world.getMinecraftServer().getPlayerList().getPlayers()){
+            if(p.world==world&&!p.isSpectator()&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(p)&&out.size()<12)out.add(p.getPosition());
+        }
+        return out;
+    }
     boolean homeTooClose(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.homePosition().distanceSq(p)<36)return true;return false;}
     boolean occupied(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.getDistanceSqToCenter(p)<16)return true;return false;}
     boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos,boolean siegeKit)throws CommandException{
