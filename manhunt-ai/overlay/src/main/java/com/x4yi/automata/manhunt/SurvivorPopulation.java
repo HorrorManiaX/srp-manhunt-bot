@@ -92,7 +92,12 @@ final class SurvivorPopulation {
             if(!world.isBlockLoaded(column))continue;
             int y=world.getHeight(column).getY();
             BlockPos p=new BlockPos(column.getX(),y,column.getZ());
-            if(y<2||y>253||!SurvivorService.standable(world,p)||!world.getWorldBorder().contains(p)||service.occupied(world,p)||service.homeTooClose(world,p))continue;
+            if(y<2||y>253||Math.abs(y-origin.getY())>24||!SurvivorService.standable(world,p)||!world.getWorldBorder().contains(p)||service.occupied(world,p)||service.homeTooClose(world,p))continue;
+            var floor=world.getBlockState(p.down());
+            if(floor.getMaterial()==net.minecraft.block.material.Material.LEAVES||floor.getMaterial().isLiquid()||floor.getBlock()==net.minecraft.init.Blocks.MAGMA||floor.getBlock()==net.minecraft.init.Blocks.CACTUS)continue;
+            int walkable=0;
+            for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)if(SurvivorService.standable(world,p.add(x,0,z)))walkable++;
+            if(walkable<12)continue;
             if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(12),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
             if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(3)).isEmpty())continue;
             return p;
