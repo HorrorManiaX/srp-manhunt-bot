@@ -242,7 +242,7 @@ public final class SurvivorService extends CommandBase {
         activate(server,world,bot);
         sender.sendMessage(new TextComponentString("Spawned " + name + " (AI, not counted as an authenticated user)"));
     }
-    static boolean standable(WorldServer world,BlockPos pos){return world.isBlockLoaded(pos)&&world.isBlockLoaded(pos.up())&&world.isBlockLoaded(pos.down())&&world.getWorldBorder().contains(pos)&&CellClassifier.isPassable(world,pos)&&CellClassifier.isPassable(world,pos.up())&&CellClassifier.isSolidSupport(world,pos.down());}
+    static boolean standable(WorldServer world,BlockPos pos){return SurvivorTerrain.stand(world,pos);}
     int activeCount(){return bots.size();}
     boolean activeName(String name){return bots.containsKey(key(name));}
     boolean parkedElsewhere(MinecraftServer server,String k){for(WorldServer w:server.worlds)if(w!=null&&w.provider.getDimension()!=0&&SurvivorRoster.get(w).contains(k))return true;return false;}
