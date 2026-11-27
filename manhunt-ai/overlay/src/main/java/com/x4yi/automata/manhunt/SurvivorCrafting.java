@@ -16,6 +16,36 @@ import net.minecraftforge.fml.common.registry.ForgeRegistries;
 /** Bounded, inventory-only crafting. Only real registry recipes. */
 final class SurvivorCrafting {
     private static List<ResourceLocation> basics;
+    private static final java.util.Map<Item,List<ResourceLocation>> recipes=new java.util.HashMap<>();
+    private static boolean indexed;
+    private static void index() {
+        if(indexed)return;
+        for(IRecipe r:ForgeRegistries.RECIPES.getValuesCollection()){
+            ItemStack out=r.getRecipeOutput();
+            if(!r.isDynamic() && !out.isEmpty() && r.getRegistryName()!=null)
+                recipes.computeIfAbsent(out.getItem(),k->new ArrayList<>()).add(r.getRegistryName());
+        }
+        indexed=true;
+    }
+    static boolean craftOutput(SurvivorPlayer bot,Item output, boolean table) {
+        index();
+        int attempts=0;
+        for(ResourceLocation id:recipes.getOrDefault(output,java.util.Collections.emptyList())) {
+            if(!"minecraft".equals(id.getNamespace()))continue;
+            if(++attempts>16)break;
+            if(craft(bot,id,table))return true;
+        }
+        return false;
+    }
+    static boolean nearbyBench(SurvivorPlayer bot) {
+        net.minecraft.util.math.BlockPos center=bot.getPosition();
+        for(net.minecraft.util.math.BlockPos p:net.minecraft.util.math.BlockPos.getAllInBoxMutable(center.add(-3,-1,-3),center.add(3,2,3))) {
+            if(!bot.world.isBlockLoaded(p) || bot.getDistanceSqToCenter(p)>16 || bot.world.getBlockState(p).getBlock()!=Blocks.CRAFTING_TABLE)continue;
+            var hit=bot.world.rayTraceBlocks(bot.getPositionEyes(1F),new net.minecraft.util.math.Vec3d(p).add(.5,.5,.5),false,true,false);
+            if(hit!=null&&p.equals(hit.getBlockPos())&&SurvivorPermissions.allowed(bot,p,true))return true;
+        }
+        return false;
+    }
     static void autoBasic(SurvivorPlayer bot) {
         if (basics == null) {
             basics = new ArrayList<>();
@@ -41,17 +71,21 @@ final class SurvivorCrafting {
         }
     }
     static boolean craft(SurvivorPlayer bot, ResourceLocation id) {
+        return craft(bot,id,false);
+    }
+    private static boolean craft(SurvivorPlayer bot,ResourceLocation id,boolean table) {
         IRecipe r = ForgeRegistries.RECIPES.getValue(id);
         if (r == null || r.isDynamic()) return false;
         List<Ingredient> ingredients = r.getIngredients();
-        int w = r instanceof IShapedRecipe<?> shaped ? shaped.getRecipeWidth() : 2;
-        int h = r instanceof IShapedRecipe<?> shaped ? shaped.getRecipeHeight() : 2;
-        if (w < 1 || h < 1 || w > 2 || h > 2 || ingredients.isEmpty() || ingredients.size() > 4 || ingredients.size() > w*h) return false;
+        int size=table?3:2;
+        int w = r instanceof IShapedRecipe<?> shaped ? shaped.getRecipeWidth() : size;
+        int h = r instanceof IShapedRecipe<?> shaped ? shaped.getRecipeHeight() : size;
+        if (w < 1 || h < 1 || w > size || h > size || ingredients.isEmpty() || ingredients.size() > size*size || ingredients.size() > w*h || !r.canFit(size,size)) return false;
         List<ItemStack> stock = new ArrayList<>();
         for (int i=0; i<36; i++) stock.add(bot.inventory.getStackInSlot(i).copy());
         InventoryCrafting grid = new InventoryCrafting(new Container() {
             @Override public boolean canInteractWith(EntityPlayer p) { return false; }
-        }, 2, 2);
+        }, size, size);
         int[] budget = { 512 };
         if (!assign(r, bot, ingredients, w, 0, stock, grid, budget)) return false;
         ItemStack output = r.getCraftingResult(grid);
@@ -66,7 +100,7 @@ final class SurvivorCrafting {
         if (--budget[0] < 0) return false;
         if (i == in.size()) return r.matches(grid, bot.world);
         Ingredient ingredient = in.get(i);
-        int slot = i/w*2 + i%w;
+        int slot = i/w*grid.getWidth() + i%w;
         if (ingredient == Ingredient.EMPTY) return assign(r, bot, in, w, i+1, stock, grid, budget);
         for (int j=0; j<stock.size(); j++) {
             ItemStack s=stock.get(j);
