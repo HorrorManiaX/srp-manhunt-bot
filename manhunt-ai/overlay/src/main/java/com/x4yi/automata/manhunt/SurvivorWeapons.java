@@ -15,6 +15,9 @@ final class SurvivorWeapons {
         static Method hasShot, mode, build, fire;
         static Field type, delay, range;
         static boolean available;
+        static java.lang.reflect.Constructor<?> reloadPacket;
+        static Method reloadHandler,isReloading;
+        static Field animation,reloadTime;
         static {
             try {
                 gun = Class.forName("com.modularwarfare.common.guns.ItemGun");
@@ -28,6 +31,13 @@ final class SurvivorWeapons {
                 build = data.getMethod("buildServer", float.class, float.class, World.class, ItemStack.class, gun, fm, boolean.class, Float.class, Float.class);
                 fire = manager.getMethod("fire", EntityLivingBase.class, data);
                 available = true;
+                try{
+                    Class<?> packet=Class.forName("com.modularwarfare.common.network.PacketGunReload");
+                    reloadPacket=packet.getConstructor(boolean.class);
+                    reloadHandler=packet.getMethod("handleServerSide",net.minecraft.entity.player.EntityPlayerMP.class);
+                    isReloading=gun.getMethod("isServerReloading",EntityPlayer.class);
+                    animation=gt.getField("animationType");reloadTime=gt.getField("reloadTime");
+                }catch(ReflectiveOperationException | LinkageError ex){reloadHandler=null;}
             } catch (ReflectiveOperationException | LinkageError | RuntimeException ex) {
                 AutomataMod.LOGGER.warn("Manhunt AI: Modular Warfare integration unavailable: " + ex);
             }
@@ -36,18 +46,35 @@ final class SurvivorWeapons {
     static int loadedGun(SurvivorPlayer bot) {
         if (!Api.available) return -1;
         try {
-            for (int i = 0; i < 9; i++) {
+            for (int i = 0; i < 36; i++) {
                 ItemStack s = bot.inventory.getStackInSlot(i);
                 if (!s.isEmpty() && Api.gun.isInstance(s.getItem()) && Boolean.TRUE.equals(Api.hasShot.invoke(null, s))) return i;
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError ex) { disable(ex); }
         return -1;
     }
+    static int reload(SurvivorPlayer bot){
+        if(!Api.available || Api.reloadHandler==null)return 0;
+        try{
+            if(Boolean.TRUE.equals(Api.isReloading.invoke(null,bot)))return 0;
+            for(int i=0;i<36;i++){
+                ItemStack s=bot.inventory.getStackInSlot(i);
+                if(s.isEmpty()||!Api.gun.isInstance(s.getItem())||Boolean.TRUE.equals(Api.hasShot.invoke(null,s)))continue;
+                Object type=Api.type.get(s.getItem());
+                // Enhanced reload needs a real animation-task handshake. Never fake completion.
+                if("ENHANCED".equals(String.valueOf(Api.animation.get(type))))continue;
+                bot.equipInventorySlot(i);
+                Api.reloadHandler.invoke(Api.reloadPacket.newInstance(false),bot);
+                return Math.max(20,Api.reloadTime.getInt(type));
+            }
+        }catch(ReflectiveOperationException|RuntimeException|LinkageError ex){Api.reloadHandler=null;AutomataMod.LOGGER.warn("Manhunt AI basic reload disabled",ex);}
+        return 0;
+    }
     static int fire(SurvivorPlayer bot, EntityLivingBase target) {
         if (!Api.available || !ManhuntCompat.isHostile(target) || !bot.canEntityBeSeen(target)) return 20;
         try {
             ItemStack s = bot.getHeldItemMainhand();
-            if (!Api.gun.isInstance(s.getItem()) || !Boolean.TRUE.equals(Api.hasShot.invoke(null, s))) return 20;
+            if (!Api.gun.isInstance(s.getItem()) || !Boolean.TRUE.equals(Api.hasShot.invoke(null, s)) || (Api.isReloading!=null&&Boolean.TRUE.equals(Api.isReloading.invoke(null,bot)))) return 20;
             Object t = Api.type.get(s.getItem());
             if (bot.getDistanceSq(target) > Math.pow(Math.min(24, Api.range.getInt(t)), 2)) return 10;
             Vec3d start = bot.getPositionEyes(1F), end = start.add(bot.getLookVec().scale(Math.min(24, Api.range.getInt(t))));
