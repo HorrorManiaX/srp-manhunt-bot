@@ -224,13 +224,14 @@ public final class SurvivorService extends CommandBase {
     BlockPos overworldCamp(WorldServer world){for(SurvivorPlayer bot:bots.values())if(bot.world==world)return bot.homePosition();return null;}
     boolean homeTooClose(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.homePosition().distanceSq(p)<36)return true;return false;}
     boolean occupied(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.getDistanceSqToCenter(p)<16)return true;return false;}
-    boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos)throws CommandException{
+    boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos,boolean siegeKit)throws CommandException{
         String k=key(name);if(bots.size()>=MAX||activeName(name)||!standable(world,pos))return false;
         UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),pos);
         if(!SurvivorPermissions.allowed(bot,pos,true)){bot.cancelPlanning();return false;}
         SurvivorRoster roster=SurvivorRoster.get(world);
         if(roster.recruited(k))bot.inventory.clear();
+        else if(siegeKit)bot.equipSiegeStarter();
         bot.autonomous(true);bot.industry(true);
         activate(server,world,bot);roster.markRecruited(k);return true;
     }
@@ -238,7 +239,7 @@ public final class SurvivorService extends CommandBase {
         SurvivorRoster roster=SurvivorRoster.get(world);var n=roster.snapshot(k);
         if(n==null)return false;
         String name=n.getString("name");BlockPos pos=SurvivorRoster.position(n),home=SurvivorRoster.home(n);
-        if(!name.matches("AI_[A-Za-z0-9_]{1,13}")||!key(name).equals(k)||activeName(name)||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos))return false;
+        if(!name.matches("AI_[A-Za-z0-9_]{1,13}")||!key(name).equals(k)||activeName(name)||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos)||!world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(16),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty())return false;
         UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
         bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);SurvivorRoster.restore(bot,n);
