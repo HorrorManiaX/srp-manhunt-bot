@@ -40,6 +40,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private boolean stressed;
     private BlockPos lastThreat, plannedGoal, escapeGoal;
     private int lastThreatTick, stuckTicks, explosionUntil, nextHazardScan;
+    private int nextStrafe,strafeSide=1,lastDamageTick=-1000;
     private double lastX, lastZ;
     private net.minecraft.entity.item.EntityItem loot;
     private SurvivorBrain.Action previousAction = SurvivorBrain.Action.PATROL;
@@ -150,6 +151,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         pending = null; path = PathResult.EMPTY; step = 0; plannedGoal = null; nextPlan = 0;
     }
     void setStressed(boolean stressed) { this.stressed=stressed; }
+    void tookDamage(){lastDamageTick=age;nextHazardScan=age;nextScan=age;}
     void alert(EntityLivingBase source, BlockPos location) {
         if (source != null && (source == this || !ManhuntCompat.isHostile(source))) return;
         if (location == null || getDistanceSqToCenter(location) > 24*24) return;
@@ -392,8 +394,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if (!isEntityAlive()) return;
         age++;
         planFortification();
+        if(gunSlot>=0&&!SurvivorWeapons.isLoaded(inventory.getStackInSlot(gunSlot)))gunSlot=-1;
+        if(bowSlot>=0&&inventory.getStackInSlot(bowSlot).getItem()!=Items.BOW)bowSlot=-1;
         if(age>=nextInventoryScan) {
-            nextInventoryScan=age+10;
+            nextInventoryScan=age+(target!=null?4:10);
             if(target==null&&!stressed&&age%100<10)equipVanillaArmor();
             gunSlot=SurvivorWeapons.loadedGun(this);bowSlot=findBow();foodSlot=findFood();
         }
@@ -418,7 +422,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),hasLoadedGun(),getHeldItemOffhand().getItem()==Items.SHIELD)) action=SurvivorBrain.Action.RETREAT;
             else if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
         }
-        if(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&target!=null&&getDistanceSq(target)<9)action=findMelee()>=0?SurvivorBrain.Action.MELEE:SurvivorBrain.Action.RETREAT;
+        if(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&target!=null&&getDistanceSq(target)<9)action=findMelee()>=0&&target.getHealth()<=getMaxHealth()*2?SurvivorBrain.Action.MELEE:SurvivorBrain.Action.RETREAT;
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
         activity=retreat?"retreat":action==SurvivorBrain.Action.EAT?"eat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
         if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
@@ -433,8 +437,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(assistance!=null&&action==SurvivorBrain.Action.BUILD){action=SurvivorBrain.Action.PATROL;activity="assist";}
         if(assistance!=null&&action==SurvivorBrain.Action.PATROL)activity="assist";
         if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null)nextPlan=0;
-        if(action==SurvivorBrain.Action.PATROL && gunSlot<0 && age>=nextReload && !stressed){
-            nextReload=age+100;
+        if((action==SurvivorBrain.Action.PATROL||action==SurvivorBrain.Action.RETREAT&&target!=null&&getDistanceSq(target)>144)&&gunSlot<0&&age>=nextReload&&!stressed&&!isHandActive()){
+            nextReload=age+40;
             int reload=SurvivorWeapons.reload(this);
             if(reload>0)reloadUntil=age+reload;
         }
@@ -466,23 +470,25 @@ public final class SurvivorPlayer extends EntityPlayerMP {
                 lookAt(target.posX, target.posY + target.getEyeHeight() * .75, target.posZ);
                 if(age>=nextAttack&&age>=reloadUntil)nextAttack=age+SurvivorWeapons.fire(this,target);
             }else driveBow(target);
+            combatFootwork(target,true);
         } else if (target != null && action==SurvivorBrain.Action.MELEE) {
             if (isHandActive() && (getActiveHand()!=EnumHand.OFF_HAND || age>=nextAttack)) cancelActiveUse();
             int melee = findMelee();
             if (melee >= 0) equipInventorySlot(melee);
             lookAt(target.posX, target.posY + target.getEyeHeight(), target.posZ);
             if (melee >= 0 && age >= nextAttack && getCooledAttackStrength(0) >= .90F) {
-                nextAttack = age + 12 + rand.nextInt(7);
+                nextAttack = age + 5 + rand.nextInt(3);
                 attackTargetEntityWithCurrentItem(target);
                 swingArm(EnumHand.MAIN_HAND);
-            } else if(getHeldItemOffhand().getItem()==Items.SHIELD && !isHandActive() && age<nextAttack) setActiveHand(EnumHand.OFF_HAND);
+            } else if(getHeldItemOffhand().getItem()==Items.SHIELD && !isHandActive() && (age<nextAttack||getCooledAttackStrength(0)<.9F)) setActiveHand(EnumHand.OFF_HAND);
+            combatFootwork(target,false);
         } else { followPath(); if(retreat && moveForward==0)escapeStep(); if(retreat && moveForward>0 && getFoodStats().getFoodLevel()>6) setSprinting(true); }
         if (action==SurvivorBrain.Action.EAT && foodSlot >= 0 && inventory.getStackInSlot(foodSlot).getItem() instanceof ItemFood && !inventory.getStackInSlot(foodSlot).isEmpty()) {
             if(isHandActive()&&getActiveItemStack().getItem()==Items.BOW)cancelActiveUse();
             foodSlot=equipInventorySlot(foodSlot); moveForward = 0;
             if (!isHandActive()) setActiveHand(EnumHand.MAIN_HAND);
         } else {
-            if(isHandActive()&&!(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&getActiveItemStack().getItem()==Items.BOW)&&!(action==SurvivorBrain.Action.MELEE&&getActiveHand()==EnumHand.OFF_HAND&&age<nextAttack))cancelActiveUse();
+            if(isHandActive()&&!(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&getActiveItemStack().getItem()==Items.BOW)&&!(action==SurvivorBrain.Action.MELEE&&getActiveHand()==EnumHand.OFF_HAND&&(age<nextAttack||getCooledAttackStrength(0)<.9F)))cancelActiveUse();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
             if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
             if(action==SurvivorBrain.Action.PATROL && assistance==null && buildGoal==null && !stressed && (!furnace.active()||furnace.destination()==null)){if(foodRecovery.destination()!=null)foodRecovery.act(age);else work.act();}
@@ -523,6 +529,21 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(isHandActive()&&getActiveItemStack().getItem()==Items.BOW&&getItemInUseMaxCount()>=20){
             if(safeBowShot(enemy)){stopActiveHand();nextAttack=age+15;}else cancelActiveUse();
         }
+    }
+    private boolean safeFootstep(double dx,double dz){
+        BlockPos p=new BlockPos(posX+dx,posY,posZ+dz);
+        return standable(p)&&world.getWorldBorder().contains(p)&&!world.getBlockState(p.down()).getMaterial().isLiquid();
+    }
+    private void combatFootwork(EntityLivingBase enemy,boolean ranged){
+        if(enemy==null||!onGround)return;
+        double d=getDistanceSq(enemy);
+        if(age>=nextStrafe||age-lastDamageTick==1){strafeSide=rand.nextBoolean()?1:-1;nextStrafe=age+6+rand.nextInt(9);}
+        double yaw=Math.toRadians(rotationYaw),fx=-Math.sin(yaw),fz=Math.cos(yaw),sx=Math.cos(yaw)*strafeSide,sz=Math.sin(yaw)*strafeSide;
+        if((ranged&&d<64)||(!ranged&&age-lastDamageTick<5)){
+            if(safeFootstep(-fx*.9,-fz*.9))moveForward=-.7f;
+        }
+        if(safeFootstep(sx*.9,sz*.9))moveStrafing=.7f*strafeSide;
+        else if(safeFootstep(-sx*.9,-sz*.9))moveStrafing=-.7f*strafeSide;
     }
     private void escapeStep(){
         if(escapeGoal==null)return;
