@@ -74,9 +74,20 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        if(args.length==2 && args[0].equals("squadbuild")){
+            SurvivorPlayer leader=bots.get(key(args[1]));
+            if(leader==null||leader.world!=sender.getEntityWorld())throw new CommandException("AI leader must be in this dimension");
+            var team=new ArrayList<SurvivorPlayer>();
+            team.add(leader);
+            for(SurvivorPlayer bot:bots.values()){
+                if(bot!=leader&&bot.isEntityAlive()&&bot.world==leader.world&&bot.homePosition().distanceSq(leader.homePosition())<=16&&bot.getDistanceSq(leader)<=144)team.add(bot);
+            }
+            for(int i=0;i<team.size();i++)team.get(i).queueShelter(leader.homePosition(),i,team.size(),2);
+            sender.sendMessage(new TextComponentString("Shared 5x5 two-level wall plan: "+team.size()+" AI workers, 30 blocks, open entrance; actual supplies required."));return;
+        }
         if(args.length==1 && args[0].equals("parked")){
             if(!(sender.getEntityWorld() instanceof WorldServer world))throw new CommandException("Server world required");
             sender.sendMessage(new TextComponentString("Parked in this dimension: "+SurvivorRoster.get(world).names()));return;
