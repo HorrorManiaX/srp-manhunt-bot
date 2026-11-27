@@ -51,6 +51,35 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private final java.util.ArrayDeque<BlockPos> fortification = new java.util.ArrayDeque<>();
     private int nextChat,victories,nextVictoryChat;
     private EntityLivingBase target;
+    private SurvivorPlayer helpCaller;
+    private boolean helpCombat;
+    boolean hasLoadedGun(){return gunSlot>=0;}
+    int helpPriority(){
+        if(dangerousHere()||getHealth()<getMaxHealth()*.4f)return 100;
+        if(target!=null)return 85;
+        if(getFoodStats().getFoodLevel()<8||findFood()<0)return 65;
+        if(buildGoal!=null)return 35;
+        return 10;
+    }
+    SurvivorHelpPolicy.Need helpNeed(){
+        if(target!=null&&(getHealth()<getMaxHealth()*.45f||closeEnemies>=3))return SurvivorHelpPolicy.Need.EMERGENCY;
+        if(target!=null&&(closeEnemies>=2||target.getHealth()>getMaxHealth()*2))return SurvivorHelpPolicy.Need.COMBAT;
+        if(findFood()<0||getFoodStats().getFoodLevel()<8)return SurvivorHelpPolicy.Need.FOOD;
+        if(constructionStock()<4&&missingWallBlocks()>0)return SurvivorHelpPolicy.Need.MATERIALS;
+        return null;
+    }
+    boolean canHelpSafely(boolean combat){return !stressed&&!dangerousHere()&&getHealth()>=getMaxHealth()*.65f&&getFoodStats().getFoodLevel()>=8&&(combat||target==null);}
+    void assist(SurvivorPlayer caller,boolean combat){
+        if(helpCaller!=caller||helpCombat!=combat){helpCaller=caller;helpCombat=combat;invalidateRoute();}
+        if(combat&&caller.target!=null&&caller.target.isEntityAlive()&&caller.target.world==world&&canEntityBeSeen(caller.target))alert(caller.target,caller.target.getPosition());
+    }
+    void clearHelp(){if(helpCaller!=null){helpCaller=null;invalidateRoute();}}
+    private BlockPos helpDestination(){
+        if(helpCaller==null||!helpCaller.isEntityAlive()||helpCaller.world!=world||getDistanceSq(helpCaller)>48*48)return null;
+        if(getDistanceSq(helpCaller)<=6.25)return getPosition();
+        BlockPos p=helpCaller.getPosition();
+        return standable(p)?p:null;
+    }
     private String activity = "patrol";
     public SurvivorPlayer(MinecraftServer server, WorldServer world, GameProfile profile, BlockPos pos) {
         super(server, world, profile, new PlayerInteractionManager(world));
@@ -374,12 +403,15 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
         activity=retreat?"retreat":action==SurvivorBrain.Action.EAT?"eat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
         if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
-        if(action==SurvivorBrain.Action.PATROL && buildGoal==null&&!stressed&&furnace.active())furnace.tick(age);
-        if(action==SurvivorBrain.Action.PATROL&&buildGoal==null&&!furnace.active())foodRecovery.plan(age,stressed);
+        if(helpCaller!=null&&(!helpCaller.isEntityAlive()||helpCaller.world!=world))clearHelp();
+        BlockPos assistance=helpDestination();
+        if(action==SurvivorBrain.Action.PATROL && assistance==null && buildGoal==null&&!stressed&&furnace.active())furnace.tick(age);
+        if(action==SurvivorBrain.Action.PATROL&&assistance==null&&buildGoal==null&&!furnace.active())foodRecovery.plan(age,stressed);
         else foodRecovery.interrupt();
-        if(action==SurvivorBrain.Action.PATROL && buildGoal==null && foodRecovery.destination()==null&&(!furnace.active()||furnace.destination()==null))work.plan(stressed);
+        if(action==SurvivorBrain.Action.PATROL && assistance==null && buildGoal==null && foodRecovery.destination()==null&&(!furnace.active()||furnace.destination()==null))work.plan(stressed);
         else work.interrupt();
-        BlockPos jobGoal=furnace.active()&&furnace.destination()!=null?furnace.destination():foodRecovery.destination()!=null?foodRecovery.destination():work.destination();
+        BlockPos jobGoal=assistance!=null?assistance:furnace.active()&&furnace.destination()!=null?furnace.destination():foodRecovery.destination()!=null?foodRecovery.destination():work.destination();
+        if(assistance!=null&&action==SurvivorBrain.Action.BUILD){action=SurvivorBrain.Action.PATROL;activity="assist";}
         if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null)nextPlan=0;
         if(action==SurvivorBrain.Action.PATROL && gunSlot<0 && age>=nextReload && !stressed){
             nextReload=age+100;
@@ -431,7 +463,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if (isHandActive() && !(action==SurvivorBrain.Action.MELEE && getActiveHand()==EnumHand.OFF_HAND && age<nextAttack)) stopActiveHand();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
             if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
-            if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed && (!furnace.active()||furnace.destination()==null)){if(foodRecovery.destination()!=null)foodRecovery.act(age);else work.act();}
+            if(action==SurvivorBrain.Action.PATROL && assistance==null && buildGoal==null && !stressed && (!furnace.active()||furnace.destination()==null)){if(foodRecovery.destination()!=null)foodRecovery.act(age);else work.act();}
         }
         onUpdateEntity();
     }
