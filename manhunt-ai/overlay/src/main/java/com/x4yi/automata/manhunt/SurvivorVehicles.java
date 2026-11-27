@@ -39,6 +39,13 @@ final class SurvivorVehicles {
         if(disabled||goal==null||!net.minecraftforge.fml.common.Loader.isModLoaded("mcheli")){approach=null;return false;}
         if(age<next)return false;
         next=age+100;
+        // SRP Manhunt registers these as real 3x3 recipes in mcheli_to_vanilla.groovy.
+        if("srp_mcheli".equals(goal.getNamespace())){
+            approach=null;
+            if(!SurvivorCrafting.nearbyBench(bot)){status="requires reachable crafting table";return false;}
+            if(SurvivorCrafting.craft(bot,goal,true)){status="vehicle crafted at workbench";goal=null;return true;}
+            status="missing vehicle materials";return false;
+        }
         if(table==null||!bot.world.isBlockLoaded(table)||!TABLE.equals(bot.world.getBlockState(table).getBlock().getRegistryName())){
             approach=null;boolean carried=false;
             for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(!s.isEmpty()&&TABLE.equals(s.getItem().getRegistryName())){carried=true;break;}}

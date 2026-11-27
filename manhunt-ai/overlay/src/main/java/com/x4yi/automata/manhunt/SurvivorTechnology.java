@@ -51,7 +51,7 @@ final class SurvivorTechnology {
             int examined=0;
             for(ResourceLocation recipeId:SurvivorCrafting.recipesFor(item)){
                 if(System.nanoTime()>=stopNanos||++examined>12||budget[0]--<=0)break;
-                if(!ALLOWED.contains(recipeId.getNamespace()))continue;
+                // Output namespaces are validated above; recipe IDs may belong to GroovyScript.
                 IRecipe recipe=ForgeRegistries.RECIPES.getValue(recipeId);
                 int size=table?3:2;
                 if(recipe==null||(meta>=0&&recipe.getRecipeOutput().getMetadata()!=meta)||recipe.isDynamic()||!recipe.canFit(size,size)||recipe.getIngredients().size()>size*size)continue;

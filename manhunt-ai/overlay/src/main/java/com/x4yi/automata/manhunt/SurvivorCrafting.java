@@ -32,7 +32,7 @@ final class SurvivorCrafting {
         index();
         int attempts=0;
         for(ResourceLocation id:recipes.getOrDefault(output,java.util.Collections.emptyList())) {
-            if(!"minecraft".equals(id.getNamespace()))continue;
+            // The output item is explicitly requested; GroovyScript may replace vanilla recipe IDs.
             if(++attempts>16)break;
             if(craft(bot,id,table))return true;
         }
@@ -76,7 +76,7 @@ final class SurvivorCrafting {
     }
     static boolean craft(SurvivorPlayer bot,ResourceLocation id,boolean table) {
         IRecipe r = ForgeRegistries.RECIPES.getValue(id);
-        if (r == null || r.isDynamic() || SurvivorVehicles.aircraft(r.getRecipeOutput())) return false;
+        if (r == null || r.isDynamic() || (SurvivorVehicles.aircraft(r.getRecipeOutput()) && !"srp_mcheli".equals(id.getNamespace()))) return false;
         List<Ingredient> ingredients = r.getIngredients();
         int size=table?3:2;
         int w = r instanceof IShapedRecipe shaped ? shaped.getRecipeWidth() : size;
