@@ -396,6 +396,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(!autonomousEnabled()||stressed||target!=null||age<alertUntil||age<nextDefenseScan||buildGoal!=null||!fortification.isEmpty())return;
         nextDefenseScan=age+100;
         if(queueLadder())return;
+        if(missingWallBlocks()<8&&lavaTrap.autoPlan(age))return;
         if(carriedBlock(net.minecraft.init.Blocks.OAK_FENCE_GATE)){
             BlockPos gate=home.add(0,0,-2);
             if(world.isBlockLoaded(gate)&&world.isAirBlock(gate)&&world.isBlockLoaded(gate.down())&&CellClassifier.isSolidSupport(world,gate.down())&&requestBuild(gate,new net.minecraft.util.ResourceLocation("minecraft:fence_gate")))return;
