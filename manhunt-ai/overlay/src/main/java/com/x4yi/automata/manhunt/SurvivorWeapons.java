@@ -43,6 +43,11 @@ final class SurvivorWeapons {
             }
         }
     }
+    static boolean isGun(ItemStack s){return Api.available&&!s.isEmpty()&&Api.gun.isInstance(s.getItem());}
+    static boolean isLoaded(ItemStack s){
+        try{return isGun(s)&&Boolean.TRUE.equals(Api.hasShot.invoke(null,s));}
+        catch(ReflectiveOperationException|RuntimeException|LinkageError e){return false;}
+    }
     static int loadedGun(SurvivorPlayer bot) {
         if (!Api.available) return -1;
         try {
@@ -76,8 +81,8 @@ final class SurvivorWeapons {
             ItemStack s = bot.getHeldItemMainhand();
             if (!Api.gun.isInstance(s.getItem()) || !Boolean.TRUE.equals(Api.hasShot.invoke(null, s)) || (Api.isReloading!=null&&Boolean.TRUE.equals(Api.isReloading.invoke(null,bot)))) return 20;
             Object t = Api.type.get(s.getItem());
-            if (bot.getDistanceSq(target) > Math.pow(Math.min(24, Api.range.getInt(t)), 2)) return 10;
-            Vec3d start = bot.getPositionEyes(1F), end = start.add(bot.getLookVec().scale(Math.min(24, Api.range.getInt(t))));
+            if (bot.getDistanceSq(target) > Math.pow(Math.min(24, ((Number)Api.range.get(t)).doubleValue()), 2)) return 10;
+            Vec3d start = bot.getPositionEyes(1F), end = start.add(bot.getLookVec().scale(Math.min(24, ((Number)Api.range.get(t)).doubleValue())));
             if (target.getEntityBoundingBox().grow(.15).calculateIntercept(start, end) == null) return 3;
             for (EntityPlayer ally : bot.world.getEntitiesWithinAABB(EntityPlayer.class, bot.getEntityBoundingBox().grow(25))) {
                 if (ally != bot && !ManhuntCompat.isHostile(ally) && ally.getEntityBoundingBox().grow(.8).calculateIntercept(start, end) != null) return 10;
@@ -86,7 +91,7 @@ final class SurvivorWeapons {
             if (m == null) return 20;
             Object data = Api.build.invoke(null, bot.rotationPitch, bot.rotationYaw, bot.world, s, s.getItem(), m, true, null, null);
             Api.fire.invoke(null, bot, data);
-            return Math.max(8, Api.delay.getInt(t)) + bot.getRNG().nextInt(5);
+            return Math.max(2, Api.delay.getInt(t)) + bot.getRNG().nextInt(2);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError ex) { disable(ex); return 100; }
     }
     private static void disable(Throwable ex) {
