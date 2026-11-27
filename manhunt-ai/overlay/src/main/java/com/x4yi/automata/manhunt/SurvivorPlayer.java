@@ -82,7 +82,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         nextCombatAssessment=age+(stressed?12:4);
         double own=combatStrength(),allied=SurvivorService.INSTANCE.supportStrength(this,target);
         if(visible){lastEnemyHealth=target.getHealth();lastEnemyArmor=target.getTotalArmorValue();}
-        double enemy=Math.max(1,lastEnemyHealth)*(1+Math.min(20,lastEnemyArmor)*.035);
+        double enemy=Math.max(1,lastEnemyHealth)*(1+Math.min(20,lastEnemyArmor)*.035)*SurvivorParasiteTactics.risk(target);
         boolean vagrant=target instanceof net.minecraft.entity.player.EntityPlayer;
         if(vagrant)enemy*=1.15;
         var next=SurvivorCombatPolicy.decide(getHealth(),getMaxHealth(),own,allied,enemy,Math.max(1,closeEnemies),hasLoadedGun(),dangerousHere(),vagrant);
@@ -92,6 +92,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         combatOrder=next;
     }
     private SurvivorPlayer helpCaller;
+    private net.minecraft.entity.player.EntityPlayerMP humanCaller;
+    private int humanHelpUntil;
     private boolean helpCombat;
     boolean hasLoadedGun(){return gunSlot>=0||bowSlot>=0;}
     int helpPriority(){
@@ -118,6 +120,16 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(combat&&caller.target!=null&&caller.target.isEntityAlive()&&caller.target.world==world&&canEntityBeSeen(caller.target))alert(caller.target,caller.target.getPosition());
     }
     void clearHelp(){if(helpCaller!=null){helpCaller=null;invalidateRoute();}}
+    boolean acceptHumanHelp(net.minecraft.entity.player.EntityPlayerMP player){
+        if(!autonomousEnabled()||!SurvivorContacts.friendly(player)||player.world!=world||getDistanceSq(player)>32*32||!canEntityBeSeen(player)||!canHelpSafely(true)||helpPriority()>=75)return false;
+        humanCaller=player;humanHelpUntil=age+300;invalidateRoute();return true;
+    }
+    private BlockPos humanHelpDestination(){
+        if(humanCaller==null)return null;
+        if(age>=humanHelpUntil||!humanCaller.isEntityAlive()||humanCaller.world!=world||!SurvivorContacts.friendly(humanCaller)||getDistanceSq(humanCaller)>48*48){humanCaller=null;return null;}
+        if(getDistanceSq(humanCaller)<9)return getPosition();
+        BlockPos p=humanCaller.getPosition();return standable(p)?p:null;
+    }
     private BlockPos helpDestination(){
         if(helpCaller==null||!helpCaller.isEntityAlive()||helpCaller.world!=world||getDistanceSq(helpCaller)>48*48)return null;
         if(getDistanceSq(helpCaller)<=6.25)return getPosition();
@@ -408,6 +420,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if (age < nextChat) return null;
         nextChat = age + 200;
         String msg = message.toLowerCase(java.util.Locale.ROOT);
+        String contact=SurvivorContacts.reply(msg);if(contact!=null)return contact;
         if (msg.contains("привет") || msg.contains("здравств")) return "Привет! Я ИИ-выживший, сейчас " + russianActivity() + ".";
         if (msg.contains("здоров") || msg.contains("хп")) return "Здоровье: " + Math.round(getHealth()) + "/" + Math.round(getMaxHealth()) + ".";
         if (msg.contains("работ") || msg.contains("план") || msg.contains("роль")) return "Моя задача: " + work.status() + ".";
@@ -522,6 +535,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             else if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),hasLoadedGun(),getHeldItemOffhand().getItem()==Items.SHIELD)&&combatOrder!=SurvivorCombatPolicy.Order.ENGAGE) action=SurvivorBrain.Action.RETREAT;
             else if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
         }
+        if(target!=null&&visible&&action!=SurvivorBrain.Action.EVADE&&SurvivorParasiteTactics.noMelee(target)){
+            double minimum=SurvivorParasiteTactics.minRange(target);
+            if(!hasLoadedGun()||getDistanceSq(target)<minimum*minimum)action=SurvivorBrain.Action.RETREAT;
+        }
         if(action==SurvivorBrain.Action.APPROACH&&target!=null&&getPosition().distanceSq(home)>32*32)action=SurvivorBrain.Action.RETREAT;
         if(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&target!=null&&getDistanceSq(target)<9)action=findMelee()>=0&&target.getHealth()<=getMaxHealth()*2?SurvivorBrain.Action.MELEE:SurvivorBrain.Action.RETREAT;
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
@@ -529,6 +546,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
         if(helpCaller!=null&&(!helpCaller.isEntityAlive()||helpCaller.world!=world))clearHelp();
         BlockPos assistance=helpDestination();
+        if(assistance==null)assistance=humanHelpDestination();
         if(assistance==null&&autonomousEnabled()&&target==null)assistance=SurvivorFinalBattle.rendezvous(this);
         if(action==SurvivorBrain.Action.PATROL&&assistance==null&&buildGoal==null&&!stressed&&autonomousEnabled()){
             boolean handled=vehicleWork(age);
@@ -584,7 +602,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             int melee = findMelee();
             if (melee >= 0) equipInventorySlot(melee);
             lookAt(target.posX, target.posY + target.getEyeHeight(), target.posZ);
-            if (melee >= 0 && age >= nextAttack && getCooledAttackStrength(0) >= .90F) {
+            if (melee >= 0 && age >= nextAttack && getCooledAttackStrength(0) >= .90F && canEntityBeSeen(target) && getDistanceSq(target)<=8 && ManhuntCompat.isHostile(target)) {
                 nextAttack = age + 5 + rand.nextInt(3);
                 attackTargetEntityWithCurrentItem(target);
                 swingArm(EnumHand.MAIN_HAND);
