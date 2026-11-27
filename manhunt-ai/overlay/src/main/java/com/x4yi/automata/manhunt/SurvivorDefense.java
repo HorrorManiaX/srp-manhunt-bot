@@ -12,5 +12,5 @@ public final class SurvivorDefense {
     public static boolean recovery(float health,float maxHealth,int hunger,boolean food,boolean visible,double distanceSq){
         return food&&hunger<20&&health<maxHealth*.8f&&(!visible||distanceSq>=144);
     }
-    public static int neededBlocks(int missing,int stock){return Math.max(0,Math.min(55,missing)-Math.max(0,stock));}
+    public static int neededBlocks(int missing,int stock){return Math.max(0,Math.min(76,missing)-Math.max(0,stock));}
 }
