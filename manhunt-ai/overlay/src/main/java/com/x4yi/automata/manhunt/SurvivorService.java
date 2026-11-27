@@ -28,6 +28,16 @@ public final class SurvivorService extends CommandBase {
     private static final int MAX = 6;
     private final Map<String, SurvivorPlayer> bots = new LinkedHashMap<>();
     private SurvivorService() {}
+    private final SurvivorDialogue dialogue=new SurvivorDialogue();
+    private void deliverDialogue(){
+        for(int i=0;i<2;i++){
+            SurvivorDialogue.Answer answer=dialogue.poll();if(answer==null)return;
+            SurvivorPlayer bot=bots.get(answer.botKey());
+            if(bot==null||!bot.isEntityAlive()||bot.getEntityId()!=answer.entityId()||answer.text().isEmpty())continue;
+            EntityPlayerMP player=bot.getServer().getPlayerList().getPlayerByUUID(answer.senderId());
+            if(player!=null&&player.world==bot.world)player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+answer.text()));
+        }
+    }
     private double meanAiMs;
     private long lastTickNanos;
     private double meanTickMs=50;
@@ -226,7 +236,7 @@ public final class SurvivorService extends CommandBase {
             if (owner != null) remove(owner, bot);
             else bot.cancelPlanning();
         }
-        bots.clear(); squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
+        bots.clear(); dialogue.clear(); squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player instanceof EntityPlayerMP player && player.connection != null) {
@@ -240,6 +250,7 @@ public final class SurvivorService extends CommandBase {
             String prefix="@"+bot.getName();
             if(!msg.regionMatches(true,0,prefix,0,prefix.length()) || (msg.length()>prefix.length() && !Character.isWhitespace(msg.charAt(prefix.length())))) continue;
             String reply=bot.reply(msg.substring(prefix.length()));
+            if(reply!=null && dialogue.offer(key(bot.getName()),bot.getEntityId(),event.getPlayer().getUniqueID(),bot.activity()+"; здоровье "+bot.getHealth()+"/"+bot.getMaxHealth(),msg.substring(prefix.length()),reply))break;
             if(reply!=null) {
                 for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
                     player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
@@ -251,6 +262,7 @@ public final class SurvivorService extends CommandBase {
     @SubscribeEvent public void onTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         long start=System.nanoTime();
+        deliverDialogue();
         if(lastTickNanos!=0) meanTickMs=meanTickMs*.95 + Math.min(1000,(start-lastTickNanos)/1_000_000.0)*.05;
         lastTickNanos=start;
         if(++ticks%20==0) {
