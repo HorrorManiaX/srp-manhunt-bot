@@ -59,6 +59,50 @@ final class SurvivorWeapons {
             }catch(ReflectiveOperationException|RuntimeException|LinkageError e){available=false;}
         }
     }
+    private static final class Enhanced {
+        static java.lang.reflect.Constructor<?> stop;
+        static Method handle;
+        static Field count, slot, gun, unload, prognosis;
+        static java.util.Map<java.util.UUID,Object> tasks;
+        static boolean available;
+        @SuppressWarnings("unchecked") static void init(){
+            if(available)return;
+            try{
+                Class<?> handler=Class.forName("com.modularwarfare.common.handler.ServerTickHandler");
+                Class<?> task=Class.forName("com.modularwarfare.common.handler.data.DataGunReloadEnhancedTask");
+                Class<?> packet=Class.forName("com.modularwarfare.common.network.PacketGunReloadEnhancedStop");
+                tasks=(java.util.Map<java.util.UUID,Object>)handler.getField("reloadEnhancedTask").get(null);
+                count=task.getField("reloadCount");slot=task.getField("gunSlot");gun=task.getField("reloadGun");
+                unload=task.getField("isUnload");prognosis=task.getField("prognosisAmmo");
+                stop=packet.getConstructor(int.class,boolean.class,boolean.class);
+                handle=packet.getMethod("handleServerSide",net.minecraft.entity.player.EntityPlayerMP.class);
+                available=true;
+            }catch(ReflectiveOperationException|RuntimeException|LinkageError e){AutomataMod.LOGGER.warn("AI enhanced reload unavailable",e);}
+        }
+        static {init();}
+    }
+    private record Pending(Object task,int slot,ItemStack gun,int finish){}
+    private static final java.util.Map<SurvivorPlayer,Pending> pending=new java.util.WeakHashMap<>();
+    static void cancelReload(SurvivorPlayer bot){
+        Pending p=pending.remove(bot);
+        if(p!=null&&Enhanced.tasks!=null)Enhanced.tasks.remove(bot.getUniqueID(),p.task());
+    }
+    static boolean advanceReload(SurvivorPlayer bot,int age){
+        Pending p=pending.get(bot);if(p==null)return false;
+        if(!bot.isEntityAlive()||bot.getHeldItemMainhand()!=p.gun()||bot.inventory.currentItem!=p.slot()
+            ||Enhanced.tasks.get(bot.getUniqueID())!=p.task()){cancelReload(bot);return false;}
+        if(age<p.finish())return true;
+        try{
+            int count=Math.max(0,Enhanced.count.getInt(p.task()));
+            if(count>0&&!Enhanced.unload.getBoolean(p.task())&&Enhanced.prognosis.get(p.task()) instanceof ItemStack stack&&!stack.isEmpty()){
+                Enhanced.handle.invoke(Enhanced.stop.newInstance(count,true,true),bot);
+                bot.inventory.markDirty();
+            }
+        }catch(ReflectiveOperationException|RuntimeException|LinkageError e){AutomataMod.LOGGER.warn("AI enhanced reload completion failed",e);}
+        finally{cancelReload(bot);}
+        return false;
+    }
+    static boolean isAmmo(ItemStack s){return AmmoApi.available&&!s.isEmpty()&&(AmmoApi.magazine.isInstance(s.getItem())||AmmoApi.bullet.isInstance(s.getItem()));}
     private static java.util.List<net.minecraft.item.Item> ammoItems;
     private static boolean accepts(String[] names,String name){
         if(names==null||name==null)return false;
@@ -118,7 +162,7 @@ final class SurvivorWeapons {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError ex) { disable(ex); }
         return -1;
     }
-    static int reload(SurvivorPlayer bot){
+    static int reload(SurvivorPlayer bot,int age){
         if(!Api.available || Api.reloadHandler==null)return 0;
         try{
             if(Boolean.TRUE.equals(Api.isReloading.invoke(null,bot)))return 0;
@@ -126,11 +170,20 @@ final class SurvivorWeapons {
                 ItemStack s=bot.inventory.getStackInSlot(i);
                 if(s.isEmpty()||!Api.gun.isInstance(s.getItem())||Boolean.TRUE.equals(Api.hasShot.invoke(null,s)))continue;
                 Object type=Api.type.get(s.getItem());
-                // Enhanced reload needs a real animation-task handshake. Never fake completion.
-                if("ENHANCED".equals(String.valueOf(Api.animation.get(type))))continue;
+                boolean enhanced="ENHANCED".equals(String.valueOf(Api.animation.get(type)));
+                if(enhanced&&!Enhanced.available)continue;
                 bot.equipInventorySlot(i);
                 Api.reloadHandler.invoke(Api.reloadPacket.newInstance(false),bot);
-                return Math.max(20,Api.reloadTime.getInt(type));
+                int wait=Math.max(20,Api.reloadTime.getInt(type));
+                if(enhanced){
+                    Object task=Enhanced.tasks.get(bot.getUniqueID());
+                    if(task==null)continue;
+                    if(Enhanced.unload.getBoolean(task)){Enhanced.tasks.remove(bot.getUniqueID(),task);continue;}
+                    int slot=Enhanced.slot.getInt(task);
+                    if(slot!=bot.inventory.currentItem||Enhanced.gun.get(task)!=bot.getHeldItemMainhand()){Enhanced.tasks.remove(bot.getUniqueID(),task);continue;}
+                    pending.put(bot,new Pending(task,slot,bot.getHeldItemMainhand(),age+wait));
+                }
+                return wait;
             }
         }catch(ReflectiveOperationException|RuntimeException|LinkageError ex){Api.reloadHandler=null;AutomataMod.LOGGER.warn("Manhunt AI basic reload disabled",ex);}
         return 0;

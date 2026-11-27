@@ -18,7 +18,7 @@ final class SurvivorSeason {
     static boolean useful(ItemStack s){
         if(s.isEmpty()||s.getItem().getRegistryName()==null)return false;
         String id=s.getItem().getRegistryName().toString();
-        return id.startsWith("srparasites:lurecomponent")||id.equals("srparasites:evolutionlure")||id.equals("srparasites:biomeheart")||id.equals("srparasites:colonyheart")||id.equals("srparasites:biomepurifier")||id.equals("overlast:final_specimen")||id.equals("minecraft:nether_star")||id.equals("minecraft:dragon_egg")||id.startsWith("openmodularturrets:")||id.startsWith("mcheli:")||SurvivorWeapons.isGun(s);
+        return id.startsWith("srparasites:lurecomponent")||id.equals("srparasites:evolutionlure")||id.equals("srparasites:biomeheart")||id.equals("srparasites:colonyheart")||id.equals("srparasites:biomepurifier")||id.equals("overlast:final_specimen")||id.equals("minecraft:nether_star")||id.equals("minecraft:dragon_egg")||id.startsWith("openmodularturrets:")||id.startsWith("mcheli:")||SurvivorWeapons.isGun(s)||SurvivorWeapons.isAmmo(s)||id.startsWith("thermalfoundation:")||id.startsWith("thermalexpansion:")||id.startsWith("tetra:");
     }
     int count(ResourceLocation id,int meta){
         int total=0;

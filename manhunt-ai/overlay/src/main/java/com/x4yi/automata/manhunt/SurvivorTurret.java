@@ -14,7 +14,9 @@ final class SurvivorTurret {
     private static final ResourceLocation HEAD=new ResourceLocation("openmodularturrets:disposable_item_turret");
     private final SurvivorPlayer bot;
     private final SurvivorTechnology recipes;
-    private BlockPos base,approach;
+    private static final ResourceLocation GENERATOR=new ResourceLocation("openmodularturrets:generator");
+    private BlockPos base,approach,generator;
+    private TileEntity generatorTile;
     private TileEntity owned;
     private int next;
     private boolean disabled;
@@ -42,6 +44,36 @@ final class SurvivorTurret {
             return;
         }
     }
+    private boolean serviceGenerator() throws ReflectiveOperationException {
+        if(generatorTile!=null&&(generatorTile.isInvalid()||!bot.world.isBlockLoaded(generator)||bot.world.getTileEntity(generator)!=generatorTile)){
+            generatorTile=null;generator=null;
+        }
+        if(generatorTile==null){
+            if(!has(GENERATOR,-1))return recipes.produceOnce(GENERATOR,-1);
+            for(EnumFacing f:EnumFacing.HORIZONTALS){
+                BlockPos p=base.offset(f);
+                if(bot.world.isBlockLoaded(p)&&bot.world.isBlockLoaded(p.down())&&bot.world.isAirBlock(p)&&bot.world.getBlockState(p.down()).isFullCube()&&bot.requestBuild(p,GENERATOR))return true;
+            }
+            return false;
+        }
+        if(!SurvivorPermissions.interact(bot,generator)||bot.getDistanceSqToCenter(generator)>16)return false;
+        var hit=bot.world.rayTraceBlocks(bot.getPositionEyes(1),new net.minecraft.util.math.Vec3d(generator).add(.5,.5,.5),false,true,false);
+        if(hit==null||!generator.equals(hit.getBlockPos()))return false;
+        IItemHandler fuel=(IItemHandler)generatorTile.getClass().getMethod("getFuel").invoke(generatorTile);
+        for(int j=0;j<Math.min(16,fuel.getSlots());j++){
+            if(fuel.getStackInSlot(j).getCount()>=8)continue;
+            for(int i=0;i<36;i++){
+                ItemStack s=bot.inventory.getStackInSlot(i);
+                if(s.isEmpty()||s.getItem()!=net.minecraft.init.Items.COAL||s.getCount()<5)continue;
+                ItemStack offer=s.copy();offer.setCount(Math.min(4,s.getCount()-4));
+                int amount=offer.getCount();
+                ItemStack rest=fuel.insertItem(j,offer,false);
+                int moved=Math.max(0,Math.min(amount,amount-rest.getCount()));
+                if(moved>0){s.shrink(moved);bot.inventory.markDirty();generatorTile.markDirty();status="generator fueled";return true;}
+            }
+        }
+        return false;
+    }
     private boolean has(ResourceLocation id,int meta){
         for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(!s.isEmpty()&&id.equals(s.getItem().getRegistryName())&&(meta<0||s.getMetadata()==meta))return true;}
         return false;
@@ -50,7 +82,15 @@ final class SurvivorTurret {
         return base!=null&&owned!=null&&!owned.isInvalid()&&bot.world.isBlockLoaded(base)&&bot.world.getTileEntity(base)==owned&&SurvivorPermissions.interact(bot,base);
     }
     void placed(BlockPos p){
-        if(!bot.world.isBlockLoaded(p)||valid())return;
+        if(!bot.world.isBlockLoaded(p))return;
+        if(GENERATOR.equals(bot.world.getBlockState(p).getBlock().getRegistryName())){
+            TileEntity t=bot.world.getTileEntity(p);
+            if(t!=null&&t.getClass().getName().equals("omtteam.openmodularturrets.tileentity.misc.GeneratorTileEntity")){
+                generator=p.toImmutable();generatorTile=t;
+            }
+            return;
+        }
+        if(valid())return;
         if(!BASE.equals(bot.world.getBlockState(p).getBlock().getRegistryName()))return;
         TileEntity t=bot.world.getTileEntity(p);
         if(t==null||!t.getClass().getName().equals("omtteam.openmodularturrets.tileentity.base.TurretBase"))return;
@@ -92,6 +132,7 @@ final class SurvivorTurret {
         try{
             var clazz=owned.getClass();
             supplyPower();
+            if(serviceGenerator())return true;
             // Keep the owned emplacement PvE-only; no automatic targeting of human or parasite players.
             clazz.getMethod("setAttacksPlayers",boolean.class).invoke(owned,false);
             clazz.getMethod("setAttacksNeutrals",boolean.class).invoke(owned,false);

@@ -241,7 +241,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     void clearTechGoal(){work.clearGoal();}
     void faceBlock(BlockPos p){lookAt(p.getX()+.5,p.getY()+.5,p.getZ()+.5);}
     int equipInventorySlot(int i){if(i<0||i>=36)return -1;if(i>=9){int h=inventory.currentItem;ItemStack old=inventory.getStackInSlot(h);inventory.setInventorySlotContents(h,inventory.getStackInSlot(i));inventory.setInventorySlotContents(i,old);i=h;inventory.markDirty();}inventory.currentItem=i;return i;}
-    public void cancelPlanning() { foodRecovery.interrupt();work.clear();invalidateRoute(); }
+    public void cancelPlanning() { SurvivorWeapons.cancelReload(this);foodRecovery.interrupt();work.clear();invalidateRoute(); }
     private void invalidateRoute() {
         cancelled.set(true);
         cancelled = new AtomicBoolean();
@@ -516,8 +516,15 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         int best=-1;float score=-1;
         for(int i=0;i<36;i++){
             ItemStack s=inventory.getStackInSlot(i);
-            if(s.isEmpty()||!(s.getItem() instanceof net.minecraft.item.ItemSword sword))continue;
-            float v=sword.getAttackDamage()+net.minecraft.enchantment.EnchantmentHelper.getEnchantmentLevel(net.minecraft.init.Enchantments.SHARPNESS,s)*.5f;
+            if(s.isEmpty()||s.getItem().getRegistryName()==null)continue;
+            String namespace=s.getItem().getRegistryName().getNamespace();
+            if(!(s.getItem() instanceof net.minecraft.item.ItemSword)&&!"tetra".equals(namespace))continue;
+            if(!java.util.Set.of("minecraft","tetra","thermalfoundation").contains(namespace))continue;
+            double damage=1;
+            for(var modifier:s.getAttributeModifiers(net.minecraft.inventory.EntityEquipmentSlot.MAINHAND).get(net.minecraft.entity.SharedMonsterAttributes.ATTACK_DAMAGE.getName()))
+                if(modifier.getOperation()==0)damage+=modifier.getAmount();
+            if(damage<=1||!Double.isFinite(damage))continue;
+            float v=(float)damage+net.minecraft.enchantment.EnchantmentHelper.getEnchantmentLevel(net.minecraft.init.Enchantments.SHARPNESS,s)*.5f;
             if(v>score){best=i;score=v;}
         }
         return best;
@@ -547,6 +554,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     public void drive() {
         if (!isEntityAlive()) return;
         age++;
+        if(SurvivorWeapons.advanceReload(this,age)){
+            if(target!=null&&getDistanceSq(target)<36){SurvivorWeapons.cancelReload(this);}
+            else{moveForward=0;moveStrafing=0;onUpdateEntity();return;}
+        }
         if(age%600==0)routeFailures.clear();
         planFortification();
         if(age%10==0&&!dangerousHere())closePassedGate();
@@ -615,7 +626,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null)nextPlan=0;
         if((action==SurvivorBrain.Action.PATROL||action==SurvivorBrain.Action.RETREAT&&target!=null&&getDistanceSq(target)>144)&&gunSlot<0&&age>=nextReload&&!stressed&&!isHandActive()){
             nextReload=age+40;
-            int reload=SurvivorWeapons.reload(this);
+            int reload=SurvivorWeapons.reload(this,age);
             if(reload>0)reloadUntil=age+reload;
         }
         if(retreat && (escapeGoal==null || age>=nextEvade || getDistanceSqToCenter(escapeGoal)<4)) {
