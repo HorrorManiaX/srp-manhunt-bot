@@ -108,10 +108,13 @@ final class SurvivorPopulation {
                 if(floor.getMaterial()==net.minecraft.block.material.Material.LEAVES||floor.getMaterial().isLiquid()||floor.getBlock()==net.minecraft.init.Blocks.MAGMA||floor.getBlock()==net.minecraft.init.Blocks.CACTUS)continue;
                 int walkable=0;
                 for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)if(SurvivorService.standable(world,p.add(x,0,z)))walkable++;
-                if(walkable<12)continue;
+                if(walkable<18)continue;
+                int exits=SurvivorTerrain.safeExits(world,p);
+                if(exits<2)continue;
+                int elevation=SurvivorTerrain.elevation(world,p);
                 int cover=0;
                 for(int h=2;h<=5;h++)if(world.isBlockLoaded(p.up(h))&&world.getBlockState(p.up(h)).isFullCube()){cover=12;break;}
-                int score=walkable+cover;
+                int score=walkable+cover+elevation*5+exits*3;
                 if(score<=bestScore)continue;
                 if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(24),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
                 if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(8)).isEmpty())continue;
