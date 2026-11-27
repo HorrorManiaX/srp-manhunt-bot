@@ -24,6 +24,7 @@ final class SurvivorPopulation {
     private final Random random=new Random();
     private long tick,nextJoin=SurvivorPopulationPolicy.joinDelay(random);
     private BlockPos camp;
+    private boolean reinforcement;
     private int sample;
     void init(){
         if(config!=null)return;
@@ -43,13 +44,14 @@ final class SurvivorPopulation {
         if(value){suppressed.clear();nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);failures=0;}
     }
     private static String canonical(String n){return (n.regionMatches(true,0,"AI_",0,3)?n:"AI_"+n).toLowerCase(Locale.ROOT);}
+    void reinforce(){init();enabled=true;if(target==0)target=4;reinforcement=true;failures=0;nextJoin=tick+20;suppressed.clear();config.get("population","enabled",true).set(true);config.get("population","target",4).set(target);config.save();}
     void suppress(String name){suppressed.add(canonical(name));}
     void lost(String name,boolean death){
         String k=canonical(name);
         if(death){int n=deaths.merge(k,1,Integer::sum);cooldown.put(k,tick+SurvivorPopulationPolicy.deathDelay(n));}
         else cooldown.put(k,tick+6000);
     }
-    void reset(){config=null;tick=0;nextJoin=SurvivorPopulationPolicy.joinDelay(random);failures=0;camp=null;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
+    void reset(){config=null;tick=0;nextJoin=SurvivorPopulationPolicy.joinDelay(random);failures=0;camp=null;reinforcement=false;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
     void tick(MinecraftServer server,SurvivorService service,boolean stressed){
         tick+=20;if(tick<nextJoin)return;init();
         if(!SurvivorPopulationPolicy.mayJoin(enabled,stressed,service.activeCount(),target,tick,nextJoin))return;
@@ -81,10 +83,11 @@ final class SurvivorPopulation {
         nextJoin=tick+6000;
         if(++failures==1)AutomataMod.LOGGER.warn("Manhunt AI population director temporarily paused",ex);
     }
-    private void success(){failures=0;nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);}
+    private void success(){failures=0;reinforcement=false;nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);}
     private BlockPos pickSite(WorldServer world,SurvivorService service){
         BlockPos origin=camp!=null?camp:service.overworldCamp(world);
         if(origin!=null)camp=origin;
+        if(origin==null||reinforcement){BlockPos bro=service.broAnchor(world);if(bro!=null)origin=bro;}
         if(origin==null)origin=world.getSpawnPoint();
         // After unsuccessful searches, expand to loaded areas around actual online humans.
         if(failures>=3 && sample%2==0){
