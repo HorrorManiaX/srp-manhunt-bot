@@ -322,15 +322,39 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         return missing;
     }
+    private boolean carriedBlock(net.minecraft.block.Block block){
+        for(int i=0;i<36;i++){ItemStack stack=inventory.getStackInSlot(i);if(!stack.isEmpty()&&stack.getItem()==net.minecraft.item.Item.getItemFromBlock(block))return true;}
+        return false;
+    }
+    boolean needsLadder(){
+        for(int y=0;y<=3;y++){BlockPos p=home.add(1,y,1);if(world.isBlockLoaded(p)&&world.isAirBlock(p))return true;}
+        return false;
+    }
+    private boolean queueLadder(){
+        if(!carriedBlock(net.minecraft.init.Blocks.LADDER))return false;
+        BlockPos hatch=home.add(1,2,1);
+        if(!world.isBlockLoaded(hatch)||(!world.isAirBlock(hatch)&&world.getBlockState(hatch).getBlock()!=net.minecraft.init.Blocks.LADDER))return false;
+        for(int y=0;y<=3;y++){
+            BlockPos p=home.add(1,y,1),support=p.east();
+            if(world.isBlockLoaded(p)&&world.isAirBlock(p)&&world.isBlockLoaded(support)&&world.getBlockState(support).isFullCube()&&requestBuild(p,new net.minecraft.util.ResourceLocation("minecraft:ladder")))return true;
+        }
+        return false;
+    }
     private void planDefenseRepair(){
         if(!autonomousEnabled()||stressed||target!=null||age<alertUntil||age<nextDefenseScan||buildGoal!=null||!fortification.isEmpty())return;
-        nextDefenseScan=age+200;
+        nextDefenseScan=age+100;
+        if(queueLadder())return;
+        if(carriedBlock(net.minecraft.init.Blocks.TORCH)){
+            BlockPos p=home.add(-1,0,1);
+            if(world.isBlockLoaded(p)&&world.isAirBlock(p)&&world.isBlockLoaded(p.down())&&CellClassifier.isSolidSupport(world,p.down())&&requestBuild(p,new net.minecraft.util.ResourceLocation("minecraft:torch")))return;
+        }
         int available=constructionStock();
         if(available<4)return;
         // Keep basic crafting stock available while repairing the perimeter.
         available=Math.max(0,available-4);if(available==0)return;
         for(var offset:SurvivorStrongholdPlan.structure()){
             if(available<=0)break;
+            if(offset.kind()==SurvivorStrongholdPlan.Kind.BAFFLE&&SurvivorTerrain.safeExits(world,home)<2)continue;
             BlockPos p=home.add(offset.x(),offset.y(),offset.z());
             if(!world.isBlockLoaded(p)||!world.isBlockLoaded(p.down())||!world.isAirBlock(p)||!SurvivorPermissions.allowed(this,p,true))continue;
             if(!hasBuildSupport(p)&&!fortification.contains(p.down())&&!queuedNeighbor(p))continue;
@@ -423,6 +447,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         for (int i=0; i<36; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemBlock block && !inventory.getStackInSlot(i).isEmpty() && (buildItem != null ? buildItem.equals(block.getRegistryName()) : safeBuildingBlock(block))) { slot=i; break; }
         if (slot < 0) { skippedBlocks+=1+fortification.size();buildGoal=null;buildApproach=null;fortification.clear();invalidateRoute();return; }
         for (EnumFacing side : EnumFacing.values()) {
+            if(buildItem!=null&&buildItem.toString().equals("minecraft:ladder")&&side!=EnumFacing.WEST)continue;
             BlockPos support = buildGoal.offset(side.getOpposite());
             if (!world.isBlockLoaded(support) || world.isAirBlock(support) || !SurvivorPermissions.allowed(this,support,true)) continue;
             net.minecraft.util.math.Vec3d hit = new net.minecraft.util.math.Vec3d(support).add(.5 + side.getXOffset()*.5, .5 + side.getYOffset()*.5, .5 + side.getZOffset()*.5);
@@ -507,7 +532,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
-                        new PathfindingSettings(false,false,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
+                        new PathfindingSettings(false,false,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L,true),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
             }
         }
         moveForward = 0; moveStrafing = 0;
@@ -625,6 +650,19 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(hit==null||!p.equals(hit.getBlockPos())||getDistanceSqToCenter(p)>16)return false;
         return interactionManager.processRightClickBlock(this,world,getHeldItemMainhand(),EnumHand.MAIN_HAND,p,hit.sideHit,(float)(hit.hitVec.x-p.getX()),(float)(hit.hitVec.y-p.getY()),(float)(hit.hitVec.z-p.getZ()))==EnumActionResult.SUCCESS;
     }
+    private boolean climbRoute(BlockPos p){
+        BlockPos here=getPosition();
+        if(!world.isBlockLoaded(here)||!world.isBlockLoaded(p)||world.getBlockState(p).getBlock()!=net.minecraft.init.Blocks.LADDER)return false;
+        var state=world.getBlockState(here);
+        if(state.getBlock()!=net.minecraft.init.Blocks.LADDER)state=world.getBlockState(p);
+        var facing=state.getValue(net.minecraft.block.BlockLadder.FACING);
+        if(Math.abs(posX-(p.getX()+.5))>.8||Math.abs(posZ-(p.getZ()+.5))>.8)return false;
+        if(p.getY()>posY+.1){
+            lookAt(posX-facing.getXOffset(),posY+getEyeHeight(),posZ-facing.getZOffset());
+            moveForward=.65f;
+        }else{moveForward=0;moveStrafing=0;}
+        return true;
+    }
     private void followPath() {
         while(step<path.length()){
             long packed=path.getStep(step);
@@ -633,6 +671,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             double distance=Math.hypot(dx,dz);
             if(distance<.30&&Math.abs(dy)<.55){step++;continue;}
             byte action=path.getAction(step);
+            if(action==PathNodeAction.CLIMB){if(!climbRoute(p)){markRouteFailure(packed);invalidateRoute();}return;}
             if(!world.isBlockLoaded(p)||action>PathNodeAction.FALL||SurvivorTerrain.hazardous(world,p)||SurvivorTerrain.hazardous(world,p.up())||SurvivorTerrain.hazardous(world,p.down())){
                 markRouteFailure(packed);invalidateRoute();return;
             }
@@ -641,6 +680,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(Math.abs(MathHelper.wrapDegrees(desired-rotationYaw))>25)return;
             double probe=Math.min(.75,distance),ux=distance<.01?0:dx/distance,uz=distance<.01?0:dz/distance;
             BlockPos near=new BlockPos(posX+ux*probe,posY,posZ+uz*probe);
+            if(action==PathNodeAction.WALK&&world.getBlockState(p).getBlock()==net.minecraft.init.Blocks.LADDER&&distance<1.5){moveForward=.5f;return;}
             if(action==PathNodeAction.WALK&&!SurvivorTerrain.safeStep(world,posX,posY,posZ,ux*probe,uz*probe)){
                 if(openRouteDoor(near)||openRouteDoor(near.up()))return;
                 markRouteFailure(packed);invalidateRoute();return;
