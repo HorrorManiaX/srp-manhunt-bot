@@ -145,7 +145,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         season=new SurvivorSeason(this);autoTurret=new SurvivorTurret(this);vehicles=new SurvivorVehicles(this);arena=new SurvivorArena(this);
         this.lavaTrap=new SurvivorLavaTrap(this);this.defenseStation=new SurvivorDefenseStation(this);
         this.foodRecovery=new SurvivorFood(this);
-        this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
+        // Forge mod packets bypass NetHandlerPlayServer.sendPacket and inspect channel().
+        // An isolated channel without a Forge dispatcher makes those sends no-ops.
+        this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND) {
+            private final io.netty.channel.Channel sink = new io.netty.channel.embedded.EmbeddedChannel();
+            @Override public io.netty.channel.Channel channel() { return sink; }
+            @Override public void sendPacket(Packet<?> packet) { /* No remote client; never queue. */ }
+        }, this) {
             @Override public void sendPacket(Packet<?> packet) { /* No remote client. */ }
             // This handler belongs exclusively to the agent; never invoke PlayerList.playerLoggedOut.
             @Override public void disconnect(net.minecraft.util.text.ITextComponent reason) { /* No authenticated connection. */ }
