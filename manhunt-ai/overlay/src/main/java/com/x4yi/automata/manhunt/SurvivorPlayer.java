@@ -164,6 +164,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         return new net.minecraft.util.text.TextComponentString(getName()+" [ИИ]");
     }
     BlockPos homePosition(){return home;}
+    boolean seasonNeedsIron(){return season.needsIron();}
     boolean seasonWork(int age){return season.plan(age)||arena.plan(age);}
     boolean arenaSpecimen(){return arena.hasSpecimen();}
     boolean prepareArena(BlockPos p){return arena.request(p);}
