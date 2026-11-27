@@ -46,7 +46,7 @@ final class SurvivorFurnace {
             station=pos.toImmutable();owned=furnace;
         }
     }
-    private boolean validStation(){
+    boolean validStation(){
         return station!=null&&bot.world.isBlockLoaded(station)&&owned!=null&&!owned.isInvalid()&&bot.world.getTileEntity(station)==owned
             &&SurvivorPermissions.interact(bot,station);
     }
