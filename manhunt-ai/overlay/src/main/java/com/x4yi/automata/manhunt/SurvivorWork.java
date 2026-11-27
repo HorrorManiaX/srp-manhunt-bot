@@ -35,6 +35,7 @@ final class SurvivorWork {
     boolean goal(net.minecraft.util.ResourceLocation id){return technology.setGoal(id);}
     void clearGoal(){technology.clear();}
     void industry(boolean value){industry=value;requestedOre=null;if(!value)clear();}
+    SurvivorProgression.Role role(){return role;}
     boolean industryEnabled(){return industry;}
     boolean isEnabled(){return enabled;}
     String goalId(){return technology.goalId();}
