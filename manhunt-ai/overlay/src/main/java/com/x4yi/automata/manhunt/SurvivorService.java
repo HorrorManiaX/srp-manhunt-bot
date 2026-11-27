@@ -54,6 +54,16 @@ public final class SurvivorService extends CommandBase {
         }
         return support;
     }
+    void reportOrder(SurvivorPlayer bot,SurvivorCombatPolicy.Order order){
+        String line=switch(order){
+            case ENGAGE -> "Вывозим, вместе давим!";
+            case COVER -> "Держу дистанцию, прикрываю!";
+            case WITHDRAW -> "Бля, не вывозим, отходим!";
+        };
+        for(EntityPlayerMP human:bot.getServer().getPlayerList().getPlayers())
+            if(human.world==bot.world&&human.getDistanceSq(bot)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
+                human.sendMessage(new TextComponentString("[AI/отряд] "+bot.getName()+": "+line));
+    }
     void observedThreat(SurvivorPlayer observer,net.minecraft.entity.EntityLivingBase enemy){
         if(enemy==null||enemy.world!=observer.world||!enemy.isEntityAlive()||!com.x4yi.automata.compat.ManhuntCompat.isHostile(enemy)||!observer.canEntityBeSeen(enemy))return;
         long now=observer.world.getTotalWorldTime();
