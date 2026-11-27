@@ -14,13 +14,34 @@ final class SurvivorTurret {
     private static final ResourceLocation HEAD=new ResourceLocation("openmodularturrets:disposable_item_turret");
     private final SurvivorPlayer bot;
     private final SurvivorTechnology recipes;
-    private BlockPos base;
+    private BlockPos base,approach;
     private TileEntity owned;
     private int next;
     private boolean disabled;
     private String status="waiting";
     SurvivorTurret(SurvivorPlayer bot){this.bot=bot;recipes=new SurvivorTechnology(bot);}
     String status(){return status;}
+    BlockPos destination(){return approach;}
+    private void approachBase(){
+        approach=null;double best=Double.MAX_VALUE;
+        for(EnumFacing f:EnumFacing.HORIZONTALS){BlockPos p=base.offset(f);if(SurvivorTerrain.stand(bot.world,p)&&bot.getDistanceSqToCenter(p)<best){approach=p;best=bot.getDistanceSqToCenter(p);}}
+    }
+    private void supplyPower(){
+        var target=owned.getCapability(CapabilityEnergy.ENERGY,EnumFacing.DOWN);
+        if(target==null||!target.canReceive())return;
+        if(target.getEnergyStored()>=target.getMaxEnergyStored()/2)return;
+        for(int i=0;i<36;i++){
+            ItemStack stack=bot.inventory.getStackInSlot(i);
+            if(stack.isEmpty()||stack.getCount()!=1||stack.getItem().getRegistryName()==null||!stack.getItem().getRegistryName().getNamespace().equals("thermalexpansion"))continue;
+            var battery=stack.getCapability(CapabilityEnergy.ENERGY,null);
+            if(battery==null||!battery.canExtract())continue;
+            int accepted=target.receiveEnergy(Math.min(4000,battery.extractEnergy(4000,true)),true);
+            if(accepted<=0)continue;
+            int extracted=battery.extractEnergy(accepted,false);
+            if(extracted>0){target.receiveEnergy(extracted,false);bot.inventory.markDirty();owned.markDirty();}
+            return;
+        }
+    }
     private boolean has(ResourceLocation id,int meta){
         for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(!s.isEmpty()&&id.equals(s.getItem().getRegistryName())&&(meta<0||s.getMetadata()==meta))return true;}
         return false;
@@ -42,9 +63,11 @@ final class SurvivorTurret {
         }catch(ReflectiveOperationException|RuntimeException|LinkageError e){disabled=true;AutomataMod.LOGGER.warn("AI OMT placement setup failed",e);}
     }
     boolean plan(int age){
-        if(disabled||age<next||!net.minecraftforge.fml.common.Loader.isModLoaded("openmodularturrets"))return false;
+        if(disabled||!net.minecraftforge.fml.common.Loader.isModLoaded("openmodularturrets")){approach=null;return false;}
+        if(age<next)return false;
         next=age+160;
         if(!valid()){
+            approach=null;
             // Do not claim an existing tile or one placed by another entity.
             if(base!=null&&bot.world.isBlockLoaded(base)&&bot.world.getTileEntity(base)!=owned){base=null;owned=null;}
             if(base!=null)return false;
@@ -62,11 +85,13 @@ final class SurvivorTurret {
             return bot.requestBuild(head,HEAD);
         }
         if(!HEAD.equals(bot.world.getBlockState(head).getBlock().getRegistryName())){status="mount occupied";return false;}
-        if(bot.getDistanceSqToCenter(base)>16)return false;
+        if(bot.getDistanceSqToCenter(base)>16){approachBase();return false;}
+        approach=null;
         var hit=bot.world.rayTraceBlocks(bot.getPositionEyes(1),new net.minecraft.util.math.Vec3d(base).add(.5,.5,.5),false,true,false);
         if(hit==null||!base.equals(hit.getBlockPos()))return false;
         try{
             var clazz=owned.getClass();
+            supplyPower();
             // Keep the owned emplacement PvE-only; no automatic targeting of human or parasite players.
             clazz.getMethod("setAttacksPlayers",boolean.class).invoke(owned,false);
             clazz.getMethod("setAttacksNeutrals",boolean.class).invoke(owned,false);
@@ -89,6 +114,6 @@ final class SurvivorTurret {
             int rf=((Number)clazz.getMethod("getEnergyStored",EnumFacing.class).invoke(owned,EnumFacing.DOWN)).intValue();
             status="installed; RF="+rf;
             return false;
-        }catch(ReflectiveOperationException|RuntimeException|LinkageError e){disabled=true;status="adapter disabled";AutomataMod.LOGGER.warn("AI OMT service failed",e);return false;}
+        }catch(ReflectiveOperationException|RuntimeException|LinkageError e){disabled=true;approach=null;status="adapter disabled";AutomataMod.LOGGER.warn("AI OMT service failed",e);return false;}
     }
 }
