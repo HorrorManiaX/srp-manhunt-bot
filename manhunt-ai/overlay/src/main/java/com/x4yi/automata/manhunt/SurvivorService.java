@@ -68,6 +68,13 @@ public final class SurvivorService extends CommandBase {
         } else victim.alert(null,victim.getPosition());
     }
     @SubscribeEvent(receiveCanceled=false)
+    public void onDeath(net.minecraftforge.event.entity.living.LivingDeathEvent event){
+        if(event.getEntityLiving().world.isRemote)return;
+        if(event.getSource().getTrueSource() instanceof SurvivorPlayer bot && bots.get(key(bot.getName()))==bot && com.x4yi.automata.compat.ManhuntCompat.isHostile(event.getEntityLiving())){
+            bot.recordVictory();
+        }
+    }
+    @SubscribeEvent(receiveCanceled=false)
     public void onExplosion(net.minecraftforge.event.world.ExplosionEvent.Start event) {
         if(event.getWorld().isRemote) return;
         net.minecraft.util.math.Vec3d p=event.getExplosion().getPosition();
@@ -248,7 +255,7 @@ public final class SurvivorService extends CommandBase {
             bots.put(key(name), bot);
             announce(server,name+" — ИИ-выживший присоединился к миру.");
         } catch (RuntimeException | CommandException e) {
-            bot.cancelPlanning();
+            bots.remove(key(name));bot.cancelPlanning();
             world.removeEntityDangerously(bot);
             broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.REMOVE_PLAYER, bot));
             throw new CommandException("AI spawn failed: " + e.getMessage());
