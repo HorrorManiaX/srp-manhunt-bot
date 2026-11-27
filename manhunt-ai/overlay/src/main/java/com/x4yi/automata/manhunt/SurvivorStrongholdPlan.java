@@ -5,7 +5,9 @@ public final class SurvivorStrongholdPlan {
     public enum Kind { WALL, ROOF, PARAPET, BAFFLE, LIGHT, GATE }
     public record Cell(int x,int y,int z,Kind kind){}
     private SurvivorStrongholdPlan(){}
-    public static List<Cell> structure(){
+    private static final List<Cell> STRUCTURE=makeStructure();
+    public static List<Cell> structure(){return STRUCTURE;}
+    private static List<Cell> makeStructure(){
         List<Cell> cells=new ArrayList<>();
         // Core walls; one two-block doorway.
         for(var p:SurvivorBlueprint.perimeter(0,1,2))cells.add(new Cell(p.x(),p.y(),p.z(),Kind.WALL));
