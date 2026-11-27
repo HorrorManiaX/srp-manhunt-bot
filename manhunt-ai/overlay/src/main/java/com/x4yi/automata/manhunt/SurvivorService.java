@@ -109,9 +109,12 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        if(args.length==1&&args[0].equals("reinforce")){
+            population.reinforce();sender.sendMessage(new TextComponentString("AI reinforcement search scheduled for next second, prioritizing loaded safe areas near human BRO. No forced spawn."));return;
+        }
         if(args.length==2 && args[0].equals("population")){
             if(args[1].equals("off"))population.configure(false,population.target());
             else if(args[1].equals("on"))population.configure(true,population.target()==0?4:population.target());
@@ -276,6 +279,11 @@ public final class SurvivorService extends CommandBase {
     boolean activeName(String name){return bots.containsKey(key(name));}
     boolean parkedElsewhere(MinecraftServer server,String k){for(WorldServer w:server.worlds)if(w!=null&&w.provider.getDimension()!=0&&SurvivorRoster.get(w).contains(k))return true;return false;}
     BlockPos overworldCamp(WorldServer world){for(SurvivorPlayer bot:bots.values())if(bot.world==world)return bot.homePosition();return null;}
+    BlockPos broAnchor(WorldServer world){
+        for(EntityPlayerMP p:world.getMinecraftServer().getPlayerList().getPlayers())
+            if(p.world==world&&SurvivorContacts.alias(p.getName()).equals("BRO")&&SurvivorContacts.friendly(p))return p.getPosition();
+        return null;
+    }
     java.util.List<BlockPos> safeHumanAnchors(WorldServer world){
         var out=new ArrayList<BlockPos>();
         for(EntityPlayerMP p:world.getMinecraftServer().getPlayerList().getPlayers()){
