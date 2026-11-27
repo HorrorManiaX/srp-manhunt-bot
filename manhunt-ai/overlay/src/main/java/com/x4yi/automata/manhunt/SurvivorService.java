@@ -37,7 +37,15 @@ public final class SurvivorService extends CommandBase {
             SurvivorPlayer bot=bots.get(answer.botKey());
             if(bot==null||!bot.isEntityAlive()||bot.getEntityId()!=answer.entityId()||answer.text().isEmpty())continue;
             EntityPlayerMP player=bot.getServer().getPlayerList().getPlayerByUUID(answer.senderId());
-            if(player!=null&&player.world==bot.world){SurvivorTelemetry.event("chat",bot,answer.text());player.sendMessage(new TextComponentString(bot.getName()+": "+answer.text()));}
+            if(player!=null)publishReply(bot,player,answer.text());
+        }
+    }
+    /** Direct chat replies use the same delivery and telemetry, with no proximity gap. */
+    private static void publishReply(SurvivorPlayer bot,EntityPlayerMP requester,String text){
+        SurvivorTelemetry.event("chat",bot,text);
+        for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers()){
+            if(player instanceof SurvivorPlayer || player.connection==null)continue;
+            if(player==requester || player.world==bot.world)player.sendMessage(new TextComponentString(bot.getName()+": "+text));
         }
     }
     private net.minecraft.util.text.ITextComponent statusOriginal,statusPublished;
@@ -354,6 +362,12 @@ public final class SurvivorService extends CommandBase {
     private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString("[Купол] "+message));}
     private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{
         String name=bot.getName();
+        if(server.getPlayerList().getPlayerByUsername(name)!=null || server.getPlayerList().getPlayerByUUID(bot.getUniqueID())!=null){
+            bot.cancelPlanning();throw new CommandException("AI identity conflicts with authenticated player");
+        }
+        for(WorldServer dimension:server.worlds)if(dimension!=null && dimension.getEntityFromUuid(bot.getUniqueID())!=null){
+            bot.cancelPlanning();throw new CommandException("AI UUID already present in world");
+        }
         if(!SurvivorFaction.human(bot)){bot.cancelPlanning();throw new CommandException("Cotesia HUMAN selection failed; AI not activated");}
         broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
         try {
@@ -409,7 +423,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()){
             if(!bot.isEntityAlive())continue;
             String label=plainName(bot.getName())+" [Купол]";
-            if(!seen.add(label.toLowerCase(java.util.Locale.ROOT)))continue;
+            if(!seen.add(plainName(bot.getName()).toLowerCase(java.util.Locale.ROOT)))continue;
             names.add(label);
         }
         if(names.size()==humanCount)return;
@@ -440,7 +454,7 @@ public final class SurvivorService extends CommandBase {
         bots.clear(); assistance.clear(); dialogue.clear(); squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.player instanceof EntityPlayerMP player && player.connection != null) {
+        if (event.player instanceof EntityPlayerMP player && !(player instanceof SurvivorPlayer) && player.connection != null) {
             SurvivorPlayer conflict=bots.get(key(player.getName()));
             if(conflict!=null&&conflict.getName().equalsIgnoreCase(player.getName())){population.suppress(conflict.getName());remove(player.getServer(),conflict);}
             for (SurvivorPlayer bot : bots.values()) player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
@@ -449,6 +463,7 @@ public final class SurvivorService extends CommandBase {
     }
     private int nextHumanHelp;
     @SubscribeEvent(receiveCanceled=false) public void onChat(ServerChatEvent event) {
+        if(event.getPlayer() instanceof SurvivorPlayer)return;
         String msg=event.getMessage();
         if(ticks>=nextHumanHelp&&SurvivorContacts.alias(event.getPlayer().getName()).equals("BRO")&&SurvivorContacts.friendly(event.getPlayer())&&SurvivorContacts.distress(msg)){
             nextHumanHelp=ticks+200;
@@ -464,10 +479,7 @@ public final class SurvivorService extends CommandBase {
             String reply=bot.reply(msg.substring(prefix.length()));
             if(reply!=null && dialogue.offer(key(bot.getName()),bot.getEntityId(),event.getPlayer().getUniqueID(),bot.dialogueContext(),msg.substring(prefix.length()),reply))break;
             if(reply!=null) {
-                SurvivorTelemetry.event("chat",bot,reply);
-                for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
-                    player.sendMessage(new TextComponentString(bot.getName()+": "+reply));
-                if(event.getPlayer().getDistanceSq(bot)>32*32)event.getPlayer().sendMessage(new TextComponentString(bot.getName()+": "+reply));
+                publishReply(bot,event.getPlayer(),reply);
             }
             break;
         }
