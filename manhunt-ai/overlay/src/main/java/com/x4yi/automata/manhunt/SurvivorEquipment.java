@@ -35,7 +35,8 @@ final class SurvivorEquipment {
         if(!has(bot,Items.BOW)&&SurvivorCrafting.craftOutput(bot,Items.BOW,true))return true;
         int arrows=0;for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(s.getItem()==Items.ARROW)arrows+=s.getCount();}
         if(arrows<24&&SurvivorCrafting.craftOutput(bot,Items.ARROW,true))return true;
-        if(bot.role()==SurvivorProgression.Role.ENGINEER||bot.role()==SurvivorProgression.Role.GUARD){
+        if(SurvivorWeapons.craftAmmo(bot))return true;
+        {
             if(gunRecipes==null){
                 gunRecipes=new java.util.ArrayList<>();
                 for(var r:net.minecraftforge.fml.common.registry.ForgeRegistries.RECIPES.getValuesCollection()){
@@ -47,7 +48,7 @@ final class SurvivorEquipment {
             for(int i=0;i<36;i++)if(SurvivorWeapons.isGun(bot.inventory.getStackInSlot(i))){hasGun=true;break;}
             if(!hasGun&&!gunRecipes.isEmpty())for(int i=0;i<Math.min(3,gunRecipes.size());i++){
                 Item item=gunRecipes.get(Math.floorMod(cursor++,gunRecipes.size()));
-                for(var id:SurvivorCrafting.recipesFor(item))if(SurvivorCrafting.craft(bot,id,true))return true;
+                int attempts=0;for(var id:SurvivorCrafting.recipesFor(item)){if(++attempts>8)break;if(SurvivorCrafting.craft(bot,id,true))return true;}
             }
         }
         return false;
