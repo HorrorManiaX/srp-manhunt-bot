@@ -49,7 +49,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private net.minecraft.util.ResourceLocation buildItem;
     private int nextBuild, buildDeadline;
     private final java.util.ArrayDeque<BlockPos> fortification = new java.util.ArrayDeque<>();
-    private int nextChat;
+    private int nextChat,victories,nextVictoryChat;
     private EntityLivingBase target;
     private String activity = "patrol";
     public SurvivorPlayer(MinecraftServer server, WorldServer world, GameProfile profile, BlockPos pos) {
@@ -75,7 +75,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     boolean calmForSupply(){return !stressed&&target==null&&age>=alertUntil&&!dangerousHere()&&!isHandActive()&&age>=reloadUntil;}
     String dialogueContext(){return activity()+"; характер: "+SurvivorPersonality.description(personality())+"; здоровье "+getHealth()+"/"+getMaxHealth();}
     String technologyGoalId(){return work.goalId();}
-    public String activity() { return activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
+    void recordVictory(){
+        victories++;
+        if(age<nextVictoryChat)return;
+        nextVictoryChat=age+400;
+        for(EntityPlayerMP p:getServer().getPlayerList().getPlayers())if(p.world==world&&p.getDistanceSq(this)<=256&&!ManhuntCompat.isHostile(p))p.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+getName()+": противник уничтожен. Проверяю окрестности."));
+    }
+    public String activity() { return "kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
     boolean hasFurnaceStation(){return furnace.validStation();}
     boolean furnaceBusy(){return furnace.active();}
     void industry(boolean enabled){work.industry(enabled);invalidateRoute();}
