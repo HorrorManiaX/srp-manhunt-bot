@@ -85,25 +85,38 @@ final class SurvivorPopulation {
         BlockPos origin=camp!=null?camp:service.overworldCamp(world);
         if(origin!=null)camp=origin;
         if(origin==null)origin=world.getSpawnPoint();
-        // Stay within loaded chunks; try a small sample each pass.
-        for(int i=0;i<24;i++){
-            int k=sample++ & 255;
-            int r=camp!=null?6+(k/16)%9:24+(k/16)*2;
-            double a=(k%16)*Math.PI/8;
-            BlockPos column=origin.add(Math.round(Math.cos(a)*r),0,Math.round(Math.sin(a)*r));
-            if(!world.isBlockLoaded(column))continue;
-            int y=world.getHeight(column).getY();
-            BlockPos p=new BlockPos(column.getX(),y,column.getZ());
-            if(y<2||y>253||Math.abs(y-origin.getY())>24||!SurvivorService.standable(world,p)||!world.getWorldBorder().contains(p)||service.occupied(world,p)||service.homeTooClose(world,p))continue;
-            var floor=world.getBlockState(p.down());
-            if(floor.getMaterial()==net.minecraft.block.material.Material.LEAVES||floor.getMaterial().isLiquid()||floor.getBlock()==net.minecraft.init.Blocks.MAGMA||floor.getBlock()==net.minecraft.init.Blocks.CACTUS)continue;
-            int walkable=0;
-            for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)if(SurvivorService.standable(world,p.add(x,0,z)))walkable++;
-            if(walkable<12)continue;
-            if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(24),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
-            if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(3)).isEmpty())continue;
-            return p;
+        // After unsuccessful searches, expand to loaded areas around actual online humans.
+        if(failures>=3 && sample%2==0){
+            var humans=service.safeHumanAnchors(world);
+            if(!humans.isEmpty())origin=humans.get(Math.floorMod(sample/24,humans.size()));
         }
-        return null;
+        BlockPos best=null;int bestScore=-1;
+        for(int i=0;i<16;i++){
+            int k=sample++ & 255;
+            int radius=camp!=null&&failures<3?6+(k/16)%9:24+(k/16)*4;
+            double angle=(k%16)*Math.PI/8;
+            BlockPos column=origin.add(Math.round(Math.cos(angle)*radius),0,Math.round(Math.sin(angle)*radius));
+            if(!world.isBlockLoaded(column))continue;
+            int top=world.getHeight(column).getY();
+            // A city rooftop is not necessarily the safest place. Try loaded floors below it too.
+            for(int dy:new int[]{0,-4,-8,-12}){
+                int y=top+dy;
+                BlockPos p=new BlockPos(column.getX(),y,column.getZ());
+                if(y<2||y>253||!SurvivorService.standable(world,p)||service.occupied(world,p)||service.homeTooClose(world,p))continue;
+                var floor=world.getBlockState(p.down());
+                if(floor.getMaterial()==net.minecraft.block.material.Material.LEAVES||floor.getMaterial().isLiquid()||floor.getBlock()==net.minecraft.init.Blocks.MAGMA||floor.getBlock()==net.minecraft.init.Blocks.CACTUS)continue;
+                int walkable=0;
+                for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)if(SurvivorService.standable(world,p.add(x,0,z)))walkable++;
+                if(walkable<12)continue;
+                int cover=0;
+                for(int h=2;h<=5;h++)if(world.isBlockLoaded(p.up(h))&&world.getBlockState(p.up(h)).isFullCube()){cover=12;break;}
+                int score=walkable+cover;
+                if(score<=bestScore)continue;
+                if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(24),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
+                if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(8)).isEmpty())continue;
+                best=p;bestScore=score;
+            }
+        }
+        return best;
     }
 }
