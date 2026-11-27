@@ -63,3 +63,9 @@ patch('navigation/AutomatonPathfinder.java',[
     ('private static final float COST_WATER_PENALTY = 5.5F;', 'private static final float COST_WATER_PENALTY = 8.0F;'),
     ('        if (buf.activePenalties != null && buf.activePenalties.get(PackedPos.pack(x, y, z)) > 0.0F) {','        if (edgeHazardPenalty(world,x,y,z)>0.0F) return false;\n        if (buf.activePenalties != null && buf.activePenalties.get(PackedPos.pack(x, y, z)) > 0.0F) {')
 ])
+
+# Manhunt agents deliberately use only conservative one-block gaps, not diagonal long parkour.
+patch('navigation/AutomatonPathfinder.java', [
+    ('int maxGap = hasRunup ? 4 : 2;', 'int maxGap = settings.allowClimbing() ? 1 : hasRunup ? 4 : 2;'),
+    ('if (settings.allowSprintJump() && world.isPassable(cx, cy + 2, cz)) {\n            tryDiagonalParkourJumps', 'if (settings.allowSprintJump() && !settings.allowClimbing() && world.isPassable(cx, cy + 2, cz)) {\n            tryDiagonalParkourJumps')
+])
