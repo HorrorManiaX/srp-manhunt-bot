@@ -13,6 +13,13 @@ final class SurvivorEquipment {
         for(int i=0;i<36;i++)if(bot.inventory.getStackInSlot(i).getItem()==item&&!bot.inventory.getStackInSlot(i).isEmpty())return true;
         return false;
     }
+    static boolean needsIron(SurvivorPlayer bot){
+        for(var slot:new EntityEquipmentSlot[]{EntityEquipmentSlot.HEAD,EntityEquipmentSlot.CHEST,EntityEquipmentSlot.LEGS,EntityEquipmentSlot.FEET}){
+            ItemStack worn=bot.getItemStackFromSlot(slot);
+            if(worn.isEmpty()||worn.getItem() instanceof ItemArmor armor&&(armor.getArmorMaterial()==ItemArmor.ArmorMaterial.LEATHER||worn.getItemDamage()>worn.getMaxDamage()*.7))return true;
+        }
+        return bot.getHeldItemOffhand().isEmpty()||!has(bot,Items.IRON_SWORD)&&!has(bot,Items.DIAMOND_SWORD);
+    }
     static boolean improve(SurvivorPlayer bot){
         if(!SurvivorCrafting.nearbyBench(bot))return false;
         if(bot.getHeldItemOffhand().isEmpty()&&!has(bot,Items.SHIELD)&&SurvivorCrafting.craftOutput(bot,Items.SHIELD,true))return true;
