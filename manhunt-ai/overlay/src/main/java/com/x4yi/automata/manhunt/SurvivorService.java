@@ -107,7 +107,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==2 && args[0].equals("population")){
@@ -184,6 +184,11 @@ public final class SurvivorService extends CommandBase {
             SurvivorPlayer bot=bots.get(key(args[1]));
             if(bot==null||!bot.vehicleGoal(new ResourceLocation(args[2])))throw new CommandException("Unknown registered MCHeli vehicle recipe");
             sender.sendMessage(new TextComponentString("Vehicle drafting task queued"));return;
+        }
+        if(args.length==5&&args[0].equals("preparearena")){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null||bot.world!=sender.getEntityWorld()||!bot.prepareArena(parseBlockPos(sender,args,2,false)))throw new CommandException("Requires loaded open sky site near agent home");
+            sender.sendMessage(new TextComponentString("Arena preparation queued. Beacon placement starts the global event; operator must authorize it."));return;
         }
         if(args.length==4&&args[0].equals("arena")){
             BlockPos p=parseBlockPos(sender,args,1,false);
