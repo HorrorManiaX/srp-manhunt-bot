@@ -43,7 +43,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private net.minecraft.entity.item.EntityItem loot;
     private SurvivorBrain.Action previousAction = SurvivorBrain.Action.PATROL;
     private int gunSlot = -1, foodSlot = -1;
-    private BlockPos buildGoal;
+    private BlockPos buildGoal,buildApproach;
+    private int nextBuildApproach,placedBlocks,skippedBlocks;
     private net.minecraft.util.ResourceLocation buildItem;
     private int nextBuild, buildDeadline;
     private final java.util.ArrayDeque<BlockPos> fortification = new java.util.ArrayDeque<>();
@@ -68,7 +69,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     BlockPos homePosition(){return home;}
     boolean autonomousEnabled(){return work.isEnabled();}
     String technologyGoalId(){return work.goalId();}
-    public String activity() { return activity+"/"+work.status()+"/furnace="+furnace.status(); }
+    public String activity() { return activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
     boolean hasFurnaceStation(){return furnace.validStation();}
     boolean furnaceBusy(){return furnace.active();}
     void industry(boolean enabled){work.industry(enabled);invalidateRoute();}
@@ -170,17 +171,33 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     public boolean requestBuild(BlockPos pos) { return requestBuild(pos, null); }
     public boolean requestBuild(BlockPos pos, net.minecraft.util.ResourceLocation item) {
         if (!world.isBlockLoaded(pos) || pos.distanceSq(home) > 12*12 || !world.isAirBlock(pos) || !SurvivorPermissions.allowed(this,pos,true)) return false;
-        buildGoal = pos; buildItem = item; buildDeadline = age + 400; nextPlan = 0; return true;
+        if(buildGoal!=null)return buildGoal.equals(pos)&&java.util.Objects.equals(buildItem,item);
+        buildGoal = pos; buildItem = item; buildDeadline = age + 400; buildApproach=null;nextBuildApproach=0;invalidateRoute();return true;
     }
-    public void fortify() {
-        fortification.clear(); buildGoal=null;
-        for(int x=-2;x<=2;x++) for(int z=-2;z<=2;z++) if((Math.abs(x)==2 || Math.abs(z)==2) && !(x==0 && z==-2)) fortification.add(home.add(x,0,z));
+    public void fortify() { queueShelter(home,0,1,1); }
+    void queueShelter(BlockPos center,int worker,int workers,int levels){
+        fortification.clear();buildGoal=null;buildApproach=null;placedBlocks=0;skippedBlocks=0;invalidateRoute();
+        for(var offset:SurvivorBlueprint.perimeter(worker,workers,levels))fortification.add(center.add(offset.x(),offset.y(),offset.z()));
+    }
+    String buildStatus(){return "placed="+placedBlocks+", skipped="+skippedBlocks+", queued="+(fortification.size()+(buildGoal==null?0:1));}
+    private BlockPos findBuildApproach(){
+        if(buildGoal==null)return null;
+        if(age<nextBuildApproach&&buildApproach!=null&&standable(buildApproach))return buildApproach;
+        nextBuildApproach=age+20;buildApproach=null;double best=Double.MAX_VALUE;
+        for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)for(int dy=-1;dy<=0;dy++){
+            if(x==0&&z==0)continue;
+            BlockPos p=buildGoal.add(x,dy,z);
+            if(!standable(p)||p.distanceSq(home)>144)continue;
+            double d=getDistanceSqToCenter(p)+.25*p.distanceSq(buildGoal);
+            if(d<best){best=d;buildApproach=p;}
+        }
+        return buildApproach;
     }
     private void planFortification() {
-        if(buildGoal!=null && age>=buildDeadline) buildGoal=null;
+        if(buildGoal!=null && age>=buildDeadline){buildGoal=null;buildApproach=null;skippedBlocks++;invalidateRoute();}
         if(buildGoal==null && !fortification.isEmpty() && age%20==1) {
             BlockPos p=fortification.removeFirst();
-            if(world.isBlockLoaded(p.down()) && CellClassifier.isSolidSupport(world,p.down())) requestBuild(p);
+            if(!world.isBlockLoaded(p.down())||!CellClassifier.isSolidSupport(world,p.down())||!requestBuild(p))skippedBlocks++;
         }
     }
     public String reply(String message) {
@@ -224,20 +241,21 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     private void placeRequestedBlock() {
         if (buildGoal == null || age < nextBuild || getDistanceSqToCenter(buildGoal) > 16) return;
+        if(getEntityBoundingBox().intersects(new net.minecraft.util.math.AxisAlignedBB(buildGoal)))return;
         nextBuild = age + 20;
         if (!world.isBlockLoaded(buildGoal) || !world.isAirBlock(buildGoal) || !SurvivorPermissions.allowed(this,buildGoal,true)) { buildGoal = null; return; }
         int slot = -1;
         for (int i=0; i<36; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemBlock block && !inventory.getStackInSlot(i).isEmpty() && (buildItem != null ? buildItem.equals(block.getRegistryName()) : block.getBlock().getDefaultState().isFullCube() && !block.getBlock().hasTileEntity(block.getBlock().getDefaultState()))) { slot=i; break; }
-        if (slot < 0) { buildGoal=null; fortification.clear(); return; }
+        if (slot < 0) { skippedBlocks+=1+fortification.size();buildGoal=null;buildApproach=null;fortification.clear();invalidateRoute();return; }
         for (EnumFacing side : EnumFacing.values()) {
             BlockPos support = buildGoal.offset(side.getOpposite());
             if (!world.isBlockLoaded(support) || world.isAirBlock(support) || !SurvivorPermissions.allowed(this,support,true)) continue;
             net.minecraft.util.math.Vec3d hit = new net.minecraft.util.math.Vec3d(support).add(.5 + side.getXOffset()*.5, .5 + side.getYOffset()*.5, .5 + side.getZOffset()*.5);
             net.minecraft.util.math.RayTraceResult trace = world.rayTraceBlocks(getPositionEyes(1F), hit.add(-side.getXOffset()*.01, -side.getYOffset()*.01, -side.getZOffset()*.01), false, true, false);
             if (trace == null || !support.equals(trace.getBlockPos()) || trace.sideHit != side) continue;
-            equipInventorySlot(slot); lookAt(hit.x,hit.y,hit.z);
+            equipInventorySlot(slot); moveForward=0;moveStrafing=0;lookAt(hit.x,hit.y,hit.z);
             EnumActionResult result=interactionManager.processRightClickBlock(this, world, getHeldItemMainhand(), EnumHand.MAIN_HAND, support, side, (float)(hit.x-support.getX()), (float)(hit.y-support.getY()), (float)(hit.z-support.getZ()));
-            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal); buildGoal=null; }
+            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal);placedBlocks++;buildGoal=null;buildApproach=null;invalidateRoute(); }
             return;
         }
     }
@@ -291,7 +309,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         if (age >= nextPlan && pending == null && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
             nextPlan=age+(stressed?60:retreat?15:30)+rand.nextInt(10);
-            BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?buildGoal:action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():jobGoal!=null?jobGoal:patrolGoal();
+            BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?findBuildApproach():action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():jobGoal!=null?jobGoal:patrolGoal();
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
