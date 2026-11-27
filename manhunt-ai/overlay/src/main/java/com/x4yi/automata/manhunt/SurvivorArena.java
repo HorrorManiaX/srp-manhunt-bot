@@ -12,6 +12,7 @@ final class SurvivorArena {
     private String status="not assigned";
     SurvivorArena(SurvivorPlayer bot){this.bot=bot;}
     String status(){return status;}
+    boolean hasSpecimen(){return origin!=null&&bot.world.isBlockLoaded(origin.east())&&new ResourceLocation("overlast:final_specimen").equals(bot.world.getBlockState(origin.east()).getBlock().getRegistryName());}
     boolean request(BlockPos p){
         if(p.distanceSq(bot.homePosition())>100||!bot.world.isBlockLoaded(p)||!bot.world.isAirBlock(p))return false;
         for(int x=-5;x<=5;x++)for(int z=-5;z<=5;z++){
