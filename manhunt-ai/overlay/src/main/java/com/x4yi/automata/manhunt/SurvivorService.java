@@ -122,7 +122,7 @@ public final class SurvivorService extends CommandBase {
             var snapshot=roster.snapshot(k);
             if(snapshot==null)throw new CommandException("No snapshot in this dimension");
             String name=snapshot.getString("name");
-            if(!name.matches("AI_[A-Za-z0-9_]{1,13}")||!key(name).equals(k)||bots.size()>=MAX||bots.containsKey(k)||server.getPlayerList().getPlayerByUsername(name)!=null)throw new CommandException("AI identity or capacity conflict");
+            if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||bots.size()>=MAX||bots.containsKey(k)||server.getPlayerList().getPlayerByUsername(name)!=null)throw new CommandException("AI identity or capacity conflict");
             BlockPos pos=SurvivorRoster.position(snapshot),home=SurvivorRoster.home(snapshot);
             if(!standable(world,pos))throw new CommandException("Saved position unavailable; load its chunk and clear the position first");
             UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
@@ -234,7 +234,7 @@ public final class SurvivorService extends CommandBase {
     boolean homeTooClose(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.homePosition().distanceSq(p)<36)return true;return false;}
     boolean occupied(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.getDistanceSqToCenter(p)<16)return true;return false;}
     boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos,boolean siegeKit)throws CommandException{
-        String k=key(name);if(bots.size()>=MAX||activeName(name)||!standable(world,pos))return false;
+        String k=key(name);if(bots.size()>=MAX||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||!standable(world,pos))return false;
         UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),pos);
         if(!SurvivorPermissions.allowed(bot,pos,true)){bot.cancelPlanning();return false;}
@@ -248,7 +248,7 @@ public final class SurvivorService extends CommandBase {
         SurvivorRoster roster=SurvivorRoster.get(world);var n=roster.snapshot(k);
         if(n==null)return false;
         String name=n.getString("name");BlockPos pos=SurvivorRoster.position(n),home=SurvivorRoster.home(n);
-        if(!name.matches("AI_[A-Za-z0-9_]{1,13}")||!key(name).equals(k)||activeName(name)||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos)||!world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(16),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty())return false;
+        if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos)||!world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(16),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty())return false;
         UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
         bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);SurvivorRoster.restore(bot,n);
@@ -308,6 +308,8 @@ public final class SurvivorService extends CommandBase {
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player instanceof EntityPlayerMP player && player.connection != null) {
+            SurvivorPlayer conflict=bots.get(key(player.getName()));
+            if(conflict!=null&&conflict.getName().equalsIgnoreCase(player.getName())){population.suppress(conflict.getName());remove(player.getServer(),conflict);}
             for (SurvivorPlayer bot : bots.values()) player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
         }
     }
