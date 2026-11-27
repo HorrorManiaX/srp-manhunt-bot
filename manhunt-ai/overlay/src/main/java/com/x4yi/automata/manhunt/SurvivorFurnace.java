@@ -48,7 +48,7 @@ final class SurvivorFurnace {
     }
     private boolean validStation(){
         return station!=null&&bot.world.isBlockLoaded(station)&&owned!=null&&!owned.isInvalid()&&bot.world.getTileEntity(station)==owned
-            &&SurvivorPermissions.allowed(bot,station,true);
+            &&SurvivorPermissions.interact(bot,station);
     }
     private boolean emptyStation(){return owned.getStackInSlot(0).isEmpty()&&owned.getStackInSlot(1).isEmpty()&&owned.getStackInSlot(2).isEmpty();}
     private void stop(String reason){goal=null;running=false;expected=ItemStack.EMPTY;destination=null;status=reason;}
@@ -80,7 +80,7 @@ final class SurvivorFurnace {
         nextCheck=age+20;
         if(!validStation()){
             if(running){stop("station unavailable; contents left in world");return;}
-            status="requires own furnace";queueStation();return;
+            status="requires own furnace";destination=null;queueStation();return;
         }
         destination=adjacent(station);
         if(destination==null){status="no access";return;}
