@@ -41,6 +41,25 @@ public final class SurvivorMemory extends WorldSavedData {
         if(!kind.equals("mined")&&!kind.equals("crafted")&&!kind.equals("encounters"))return;
         NBTTagCompound a=agent(id,true);a.setInteger(kind,Math.min(1000000,a.getInteger(kind)+1));markDirty();
     }
+    // Faction-scoped social memory. No raw chat or coordinates are persisted.
+    void rememberConversation(UUID bot,UUID other,SurvivorChatPolicy.Side side,SurvivorChatPolicy.Topic topic){
+        NBTTagCompound a=agent(bot,true), social=a.getCompoundTag("social");
+        String k=other.toString();
+        if(!social.hasKey(k,10)&&social.getKeySet().size()>=32)return;
+        NBTTagCompound entry=social.getCompoundTag(k);
+        if(!side.name().equals(entry.getString("side")))entry=new NBTTagCompound();
+        entry.setString("side",side.name());entry.setString("topic",topic.name());
+        entry.setInteger("turns",Math.min(10000,Math.max(0,entry.getInteger("turns"))+1));
+        social.setTag(k,entry);a.setTag("social",social);markDirty();
+    }
+    String recallConversation(UUID bot,UUID other,SurvivorChatPolicy.Side side){
+        NBTTagCompound entry=agent(bot,false).getCompoundTag("social").getCompoundTag(other.toString());
+        if(!side.name().equals(entry.getString("side")))return "";
+        int turns=entry.getInteger("turns");if(turns<=0)return "";
+        String topic=entry.getString("topic");
+        try{SurvivorChatPolicy.Topic.valueOf(topic);}catch(IllegalArgumentException ex){return "";}
+        return "Ранее уже общались; число реплик: "+turns+"; последняя тема: "+topic+".";
+    }
     @Override public void readFromNBT(NBTTagCompound nbt) {agents=nbt.getCompoundTag("agents");}
     @Override public NBTTagCompound writeToNBT(NBTTagCompound nbt) {nbt.setTag("agents",agents);return nbt;}
 }
