@@ -52,7 +52,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private final java.util.ArrayDeque<BlockPos> fortification = new java.util.ArrayDeque<>();
     private int nextChat,victories,nextVictoryChat;
     private EntityLivingBase target, squadTarget;
-    private int squadUntil,nextCombatAssessment,withdrawUntil;
+    private int squadUntil,nextCombatAssessment,withdrawUntil,nextOrderReport;
     private float lastEnemyHealth=20,lastEnemyArmor;
     private SurvivorCombatPolicy.Order combatOrder=SurvivorCombatPolicy.Order.WITHDRAW;
     EntityLivingBase visibleEnemy(){return target!=null&&target.isEntityAlive()&&target.world==world&&ManhuntCompat.isHostile(target)&&canEntityBeSeen(target)?target:null;}
@@ -70,7 +70,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     String combatOrderName(){return combatOrder.name();}
     private void assessCombat(boolean visible){
-        if(target==null){combatOrder=SurvivorCombatPolicy.Order.WITHDRAW;return;}
+        if(target==null){combatOrder=SurvivorCombatPolicy.Order.WITHDRAW;nextCombatAssessment=0;return;}
         if(age<nextCombatAssessment)return;
         nextCombatAssessment=age+(stressed?12:4);
         double own=combatStrength(),allied=SurvivorService.INSTANCE.supportStrength(this,target);
@@ -81,6 +81,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         var next=SurvivorCombatPolicy.decide(getHealth(),getMaxHealth(),own,allied,enemy,Math.max(1,closeEnemies),hasLoadedGun(),dangerousHere(),vagrant);
         if(next==SurvivorCombatPolicy.Order.WITHDRAW&&combatOrder!=next)withdrawUntil=age+40;
         if(age<withdrawUntil&&next==SurvivorCombatPolicy.Order.ENGAGE)next=hasLoadedGun()?SurvivorCombatPolicy.Order.COVER:SurvivorCombatPolicy.Order.WITHDRAW;
+        if(next!=combatOrder&&visible&&age>=nextOrderReport){nextOrderReport=age+160;SurvivorService.INSTANCE.reportOrder(this,next);}
         combatOrder=next;
     }
     private SurvivorPlayer helpCaller;
@@ -166,7 +167,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         nextVictoryChat=age+400;
         for(EntityPlayerMP p:getServer().getPlayerList().getPlayers())if(p.world==world&&p.getDistanceSq(this)<=256&&!ManhuntCompat.isHostile(p))p.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+getName()+": противник уничтожен. Проверяю окрестности."));
     }
-    public String activity() { return "kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
+    public String activity() { return "order="+combatOrder+"/kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
     boolean hasFurnaceStation(){return furnace.validStation();}
     boolean furnaceBusy(){return furnace.active();}
     void industry(boolean enabled){work.industry(enabled);invalidateRoute();}
