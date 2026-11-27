@@ -65,7 +65,7 @@ final class SurvivorSeason {
                 source.shrink(moved);from.inventory.markDirty();to.inventory.markDirty();
                 SurvivorTelemetry.event("chat",from,to.getName()+", на держи, это для финальной битвы.");
                 for(var human:from.getServer().getPlayerList().getPlayers())if(human.world==from.world&&human.getDistanceSq(from)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
-                    human.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+from.getName()+": "+to.getName()+", на держи, это для финальной битвы."));
+                    human.sendMessage(new net.minecraft.util.text.TextComponentString(from.getName()+": "+to.getName()+", на держи, это для финальной битвы."));
                 return;
             }
         }
