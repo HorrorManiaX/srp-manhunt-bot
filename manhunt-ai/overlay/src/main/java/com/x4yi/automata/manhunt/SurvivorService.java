@@ -75,6 +75,8 @@ public final class SurvivorService extends CommandBase {
         boolean vagrant=enemy instanceof net.minecraft.entity.player.EntityPlayer;
         String[] lines=vagrant?new String[]{"БЛЯТЬ ТУТ ВАГРАНТ, ЕБАШЬ ПО НЕМУ ЕСЛИ ВЫВОЗИМ!","ВАГРАНТ! Братаны, вместе его, по одному не лезьте!","СУКА ВАГРАНТ, держите дистанцию, прикройте!"}:new String[]{"Паразиты рядом, прикройте меня!","Бля, опять паразиты. Держим строй!","Зараженные впереди, не разбегайтесь!"};
         String line=lines[observer.getRNG().nextInt(lines.length)];
+        String warning=SurvivorParasiteTactics.warning(enemy);if(!warning.isEmpty())line+=" "+warning;
+        if(vagrant&&SurvivorContacts.alias(enemy.getName()).equals("Vagrantik"))line="Проповедник (Vagrantik) на контакте! "+line;
         for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
         for(EntityPlayerMP human:observer.getServer().getPlayerList().getPlayers()){
             if(human.world!=observer.world||human.getDistanceSq(observer)>48*48||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
@@ -363,8 +365,15 @@ public final class SurvivorService extends CommandBase {
             for (SurvivorPlayer bot : bots.values()) player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
         }
     }
+    private int nextHumanHelp;
     @SubscribeEvent(receiveCanceled=false) public void onChat(ServerChatEvent event) {
         String msg=event.getMessage();
+        if(ticks>=nextHumanHelp&&SurvivorContacts.alias(event.getPlayer().getName()).equals("BRO")&&SurvivorContacts.friendly(event.getPlayer())&&SurvivorContacts.distress(msg)){
+            nextHumanHelp=ticks+200;
+            for(SurvivorPlayer bot:bots.values())if(bot.acceptHumanHelp(event.getPlayer())){
+                event.getPlayer().sendMessage(new TextComponentString("[ИИ] "+bot.getName()+": Бро, вижу тебя, попробую прикрыть."));break;
+            }
+        }
         for(SurvivorPlayer bot : bots.values()) {
             if (!bot.isEntityAlive() || bot.world != event.getPlayer().world) continue;
             String prefix="@"+bot.getName();
