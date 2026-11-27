@@ -220,6 +220,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     SurvivorProgression.Role role(){return work.role();}
     SurvivorPersonality.Style personality(){return SurvivorPersonality.style(getUniqueID().hashCode()>>>8);}
     boolean calmForSupply(){return !stressed&&target==null&&age>=alertUntil&&!dangerousHere()&&!isHandActive()&&age>=reloadUntil;}
+    SurvivorChatPolicy.State chatState(){
+        return new SurvivorChatPolicy.State(activity,Math.round(getHealth()),Math.round(getMaxHealth()),getFoodStats().getFoodLevel(),findFood()>=0,SurvivorWeapons.loadedGun(this)>=0,target!=null&&target.isEntityAlive()&&canEntityBeSeen(target),canHelpSafely(true));
+    }
     String dialogueContext(){return activity()+"; характер: "+SurvivorPersonality.description(personality())+"; здоровье "+getHealth()+"/"+getMaxHealth();}
     String technologyGoalId(){return work.goalId();}
     void recordVictory(){

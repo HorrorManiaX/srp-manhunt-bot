@@ -42,6 +42,8 @@ jobs:
           java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.PopulationSelfTest
           java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.CombatSelfTest
           java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.StrongholdSelfTest
+          javac -encoding UTF-8 -cp /tmp/manhunt-ai-test -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorChatPolicy.java manhunt-ai/tests/ChatSelfTest.java
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.ChatSelfTest
       - name: Build and test
         working-directory: automata-upstream
         run: bash gradlew build --no-daemon

@@ -31,14 +31,55 @@ public final class SurvivorService extends CommandBase {
     private final SurvivorPopulation population=new SurvivorPopulation();
     private final SurvivorHelp assistance=new SurvivorHelp();
     private final SurvivorDialogue dialogue=new SurvivorDialogue();
+    private record ChatTurn(String botKey,int entityId,UUID sender,SurvivorChatPolicy.Side side,int due,int expiry,String message,String reply,SurvivorChatPolicy.Topic topic) {}
+    private record ChatMemory(String botKey,SurvivorChatPolicy.Side side,int tick,String message,String reply,SurvivorChatPolicy.Topic topic) {}
+    private final java.util.ArrayDeque<ChatTurn> chatQueue=new java.util.ArrayDeque<>();
+    private final Map<UUID,ChatMemory> chatMemory=new LinkedHashMap<>();
+    private final Map<String,Integer> chatCooldown=new LinkedHashMap<>();
+    private final Map<String,java.util.ArrayDeque<String>> chatRecent=new LinkedHashMap<>();
+    private final Map<UUID,ChatTurn> modelPending=new LinkedHashMap<>();
+    private int nextPublicChat;
+    private static SurvivorChatPolicy.Side side(EntityPlayerMP p){
+        if(com.x4yi.automata.compat.ManhuntCompat.isParasite(p))return SurvivorChatPolicy.Side.PARASITE;
+        if(com.x4yi.automata.compat.ManhuntCompat.confirmedHuman(p))return SurvivorChatPolicy.Side.HUMAN;
+        return SurvivorChatPolicy.Side.UNKNOWN;
+    }
+    private boolean valid(ChatTurn turn,SurvivorPlayer bot,EntityPlayerMP player){
+        return bot!=null&&bot.isEntityAlive()&&bot.getEntityId()==turn.entityId()&&player!=null&&player.world==bot.world&&side(player)==turn.side()&&ticks<=turn.expiry();
+    }
+    private void emit(ChatTurn turn,SurvivorPlayer bot,String answer){
+        answer=SurvivorDialogue.sanitize(answer);if(answer.isEmpty())return;
+        SurvivorTelemetry.event("chat",bot,answer);
+        // Public chat, same audience as ServerChatEvent. No tactical secrets or coordinates in replies.
+        TextComponentString line=new TextComponentString("<"+bot.getName()+"> "+answer);
+        for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())p.sendMessage(line.createCopy());
+        if(chatMemory.size()>=96&&!chatMemory.containsKey(turn.sender()))chatMemory.remove(chatMemory.keySet().iterator().next());
+        chatMemory.put(turn.sender(),new ChatMemory(turn.botKey(),turn.side(),ticks,turn.message(),answer,turn.topic()));
+        var recent=chatRecent.computeIfAbsent(turn.botKey(),k->new java.util.ArrayDeque<>());
+        recent.addLast(answer);while(recent.size()>8)recent.removeFirst();
+        nextPublicChat=ticks+25;
+    }
     private void deliverDialogue(){
         for(int i=0;i<2;i++){
-            SurvivorDialogue.Answer answer=dialogue.poll();if(answer==null)return;
-            SurvivorPlayer bot=bots.get(answer.botKey());
-            if(bot==null||!bot.isEntityAlive()||bot.getEntityId()!=answer.entityId()||answer.text().isEmpty())continue;
-            EntityPlayerMP player=bot.getServer().getPlayerList().getPlayerByUUID(answer.senderId());
-            if(player!=null&&player.world==bot.world){SurvivorTelemetry.event("chat",bot,answer.text());player.sendMessage(new TextComponentString(bot.getName()+": "+answer.text()));}
+            SurvivorDialogue.Answer answer=dialogue.poll();if(answer==null)break;
+            ChatTurn turn=modelPending.get(answer.senderId());
+            if(turn==null||!turn.botKey().equals(answer.botKey())||turn.entityId()!=answer.entityId())continue;
+            modelPending.remove(answer.senderId());
+            SurvivorPlayer bot=bots.get(turn.botKey());
+            EntityPlayerMP player=bot==null?null:bot.getServer().getPlayerList().getPlayerByUUID(turn.sender());
+            if(valid(turn,bot,player)&&chatQueue.size()<16){
+                String line=answer.text();
+                if(line.isEmpty()||line.matches(".*\\d{2,}.*")||chatRecent.getOrDefault(turn.botKey(),new java.util.ArrayDeque<>()).contains(line))line=turn.reply();
+                chatQueue.addFirst(new ChatTurn(turn.botKey(),turn.entityId(),turn.sender(),turn.side(),ticks,turn.expiry(),turn.message(),line,turn.topic()));
+            }
         }
+        if(ticks%20==0){modelPending.values().removeIf(t->ticks>t.expiry());chatMemory.values().removeIf(m->ticks-m.tick()>2400);}
+        if(ticks<nextPublicChat||chatQueue.isEmpty())return;
+        ChatTurn turn=chatQueue.peekFirst();if(turn.due()>ticks)return;chatQueue.removeFirst();
+        SurvivorPlayer bot=bots.get(turn.botKey());
+        EntityPlayerMP player=bot==null?null:bot.getServer().getPlayerList().getPlayerByUUID(turn.sender());
+        if(!valid(turn,bot,player))return;
+        emit(turn,bot,turn.reply());
     }
     private net.minecraft.util.text.ITextComponent statusOriginal,statusPublished;
     private String lastStatusNames="";
@@ -74,9 +115,9 @@ public final class SurvivorService extends CommandBase {
     }
     void reportOrder(SurvivorPlayer bot,SurvivorCombatPolicy.Order order){
         String line=switch(order){
-            case ENGAGE -> "Вывозим, вместе давим!";
-            case COVER -> "Держу дистанцию, прикрываю!";
-            case WITHDRAW -> "Бля, не вывозим, отходим!";
+            case ENGAGE -> new String[]{"вывозим, давим вместе","давай вдвоем, щас дожмем","вместе его, не разбегайтесь","есть шанс, заходим"}[bot.getRNG().nextInt(4)];
+            case COVER -> new String[]{"прикрою, не лезь близко","я с расстояния, держись","давай аккуратно, прикрываю","не подставляйся, я рядом"}[bot.getRNG().nextInt(4)];
+            case WITHDRAW -> new String[]{"бля не вывозим, отходим","сука отходим, живее","не лезьте, нас сейчас снесут","назад назад, не наш бой"}[bot.getRNG().nextInt(4)];
         };
         SurvivorTelemetry.event("chat",bot,line);
         for(EntityPlayerMP human:bot.getServer().getPlayerList().getPlayers())
@@ -94,7 +135,7 @@ public final class SurvivorService extends CommandBase {
         boolean vagrant=enemy instanceof net.minecraft.entity.player.EntityPlayer;
         String[] lines=vagrant?new String[]{"БЛЯТЬ ТУТ ВАГРАНТ, ЕБАШЬ ПО НЕМУ ЕСЛИ ВЫВОЗИМ!","ВАГРАНТ! Братаны, вместе его, по одному не лезьте!","СУКА ВАГРАНТ, держите дистанцию, прикройте!"}:new String[]{"Паразиты рядом, прикройте меня!","Бля, опять паразиты. Держим строй!","Зараженные впереди, не разбегайтесь!"};
         String line=lines[observer.getRNG().nextInt(lines.length)];
-        String warning=SurvivorParasiteTactics.warning(enemy);if(!warning.isEmpty())line+=" "+warning;
+        String warning=SurvivorParasiteTactics.warning(enemy);if(!warning.isEmpty()&&observer.getRNG().nextBoolean())line+=" "+(SurvivorParasiteTactics.heavy(enemy)?"не лезьте в мили":warning);
         if(vagrant&&SurvivorContacts.alias(enemy.getName()).equals("Vagrantik"))line="Проповедник (Vagrantik) на контакте! "+line;
         SurvivorTelemetry.event("chat",observer,line);
         for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
@@ -463,7 +504,7 @@ public final class SurvivorService extends CommandBase {
             if (owner != null) remove(owner, bot);
             else bot.cancelPlanning();
         }
-        bots.clear(); assistance.clear(); dialogue.clear(); squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
+        bots.clear(); assistance.clear(); dialogue.clear(); chatQueue.clear(); chatMemory.clear(); chatCooldown.clear(); chatRecent.clear(); modelPending.clear(); nextPublicChat=0; squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     /** Vanilla clients resolve SPacketSpawnPlayer through the tab profile map.
      * PlayerLoggedInEvent is too late: world insertion can start entity tracking first. */
@@ -503,28 +544,58 @@ public final class SurvivorService extends CommandBase {
     }
     private int nextHumanHelp;
     @SubscribeEvent(receiveCanceled=false) public void onChat(ServerChatEvent event) {
-        String msg=event.getMessage();
-        if(ticks>=nextHumanHelp&&SurvivorContacts.alias(event.getPlayer().getName()).equals("BRO")&&SurvivorContacts.friendly(event.getPlayer())&&SurvivorContacts.distress(msg)){
+        EntityPlayerMP sender=event.getPlayer();
+        if(sender instanceof SurvivorPlayer||sender instanceof net.minecraftforge.common.util.FakePlayer||bots.isEmpty())return;
+        String msg=SurvivorDialogue.sanitize(event.getMessage());if(msg.isEmpty()||chatQueue.size()>=12||modelPending.containsKey(sender.getUniqueID()))return;
+        for(ChatTurn pending:chatQueue)if(pending.sender().equals(sender.getUniqueID()))return;
+        var faction=side(sender);var topic=SurvivorChatPolicy.topic(msg);
+        ChatMemory memory=chatMemory.get(sender.getUniqueID());
+        if(memory!=null&&(ticks-memory.tick()>1200||memory.side()!=faction))memory=null;
+        SurvivorPlayer selected=null;boolean direct=false;double best=-Double.MAX_VALUE;
+        for(SurvivorPlayer bot:bots.values()){
+            if(!bot.isEntityAlive()||bot.world!=sender.world||ticks<chatCooldown.getOrDefault(key(bot.getName()),0))continue;
+            boolean named=SurvivorChatPolicy.addressed(msg,bot.getName());
+            boolean continuation=memory!=null&&memory.botKey().equals(key(bot.getName()));
+            boolean group=SurvivorChatPolicy.group(msg);
+            boolean nearby=sender.getDistanceSq(bot)<=64*64;
+            if(!named&&!continuation&&(!SurvivorChatPolicy.relevant(topic)||(!group&&!nearby)))continue;
+            double score=(named?1000:0)+(continuation?100:0)+(group?25:0)+(nearby?20:0)-Math.min(40,sender.getDistanceSq(bot)/256.0)+bot.getRNG().nextDouble()*15;
+            if(score>best){selected=bot;best=score;direct=named;}
+        }
+        if(selected==null)return;
+        boolean continued=memory!=null&&memory.botKey().equals(key(selected.getName()));
+        if(!direct&&!continued&&!SurvivorChatPolicy.group(msg)&&topic!=SurvivorChatPolicy.Topic.HELP&&selected.getRNG().nextInt(3)!=0)return;
+        if(!direct&&continued&&topic==SurvivorChatPolicy.Topic.CHAT&&selected.getRNG().nextInt(4)==0)return;
+        String botKey=key(selected.getName());
+        if(chatCooldown.size()>64){chatCooldown.clear();chatRecent.clear();}
+        chatCooldown.put(botKey,ticks+65+selected.getRNG().nextInt(90));
+        String reply=null;
+        // Gameplay assistance remains separately validated by Cotesia and actual proximity/LOS.
+        if(faction==SurvivorChatPolicy.Side.HUMAN&&topic==SurvivorChatPolicy.Topic.HELP&&ticks>=nextHumanHelp&&selected.acceptHumanHelp(sender)){
             nextHumanHelp=ticks+200;
-            for(SurvivorPlayer bot:bots.values())if(bot.acceptHumanHelp(event.getPlayer())){
-                SurvivorTelemetry.event("chat",bot,"Бро, вижу тебя, попробую прикрыть.");
-                event.getPlayer().sendMessage(new TextComponentString(bot.getName()+": Бро, вижу тебя, попробую прикрыть."));break;
+            String[] replies={"братан, вижу тебя, попробую прикрыть","держись, попробую помочь","вижу тебя, щас попробую подойти","бля, держись, попробую прикрыть"};
+            reply=replies[selected.getRNG().nextInt(replies.length)];
+        }
+        var previous=memory==null?"":memory.topic().name();
+        if(reply==null){
+            for(int i=0;i<6;i++){
+                reply=SurvivorChatPolicy.answer(topic,faction,selected.personality(),selected.chatState(),previous,selected.getRNG());
+                reply=SurvivorChatPolicy.stylize(reply,selected.personality(),selected.getRNG());
+                if(!chatRecent.getOrDefault(botKey,new java.util.ArrayDeque<>()).contains(reply))break;
             }
         }
-        for(SurvivorPlayer bot : bots.values()) {
-            if (!bot.isEntityAlive() || bot.world != event.getPlayer().world) continue;
-            String prefix="@"+bot.getName();
-            if(!msg.regionMatches(true,0,prefix,0,prefix.length()) || (msg.length()>prefix.length() && !Character.isWhitespace(msg.charAt(prefix.length())))) continue;
-            String reply=bot.reply(msg.substring(prefix.length()));
-            if(reply!=null && dialogue.offer(key(bot.getName()),bot.getEntityId(),event.getPlayer().getUniqueID(),bot.dialogueContext(),msg.substring(prefix.length()),reply))break;
-            if(reply!=null) {
-                SurvivorTelemetry.event("chat",bot,reply);
-                for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
-                    player.sendMessage(new TextComponentString(bot.getName()+": "+reply));
-                if(event.getPlayer().getDistanceSq(bot)>32*32)event.getPlayer().sendMessage(new TextComponentString(bot.getName()+": "+reply));
+        if(chatRecent.getOrDefault(botKey,new java.util.ArrayDeque<>()).contains(reply))return;
+        int delay=18+selected.getRNG().nextInt(43);
+        var turn=new ChatTurn(botKey,selected.getEntityId(),sender.getUniqueID(),faction,ticks+delay,ticks+360,msg,reply,topic);
+        // Optional local model only for open-ended conversation. Sensitive/identity/action topics use deterministic policy.
+        if((topic==SurvivorChatPolicy.Topic.CHAT||topic==SurvivorChatPolicy.Topic.QUESTION||topic==SurvivorChatPolicy.Topic.JOKE)&&faction==SurvivorChatPolicy.Side.HUMAN&&modelPending.size()<2){
+            String context="Собеседник "+sender.getName()+"; фракция "+faction+"; характер "+SurvivorPersonality.description(selected.personality());
+            String history=memory==null?"":"Предыдущее сообщение: "+memory.message()+"\nПредыдущий ответ: "+memory.reply()+"\n";
+            if(dialogue.offer(botKey,selected.getEntityId(),sender.getUniqueID(),context,history+"Новое сообщение: "+msg,reply)){
+                modelPending.put(sender.getUniqueID(),turn);return;
             }
-            break;
         }
+        chatQueue.addLast(turn);
     }
     @SubscribeEvent public void onTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
