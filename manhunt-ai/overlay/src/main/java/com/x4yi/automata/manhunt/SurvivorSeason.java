@@ -33,7 +33,15 @@ final class SurvivorSeason {
     boolean plan(int age){
         if(age<next)return false;next=age+100;
         if(!net.minecraftforge.fml.common.Loader.isModLoaded("srparasites"))return false;
-        if(count(SPECIMEN,-1)>0){status="final specimen ready";return false;}
+        if(count(SPECIMEN,-1)>0){
+            int iron=count(new ResourceLocation("minecraft:iron_block"),-1);
+            int beacon=count(new ResourceLocation("minecraft:beacon"),-1);
+            status="final specimen ready; arena blocks="+iron+"/9; beacon="+beacon+"/1";
+            if(!SurvivorCrafting.nearbyBench(bot))return false;
+            if(iron<9&&count(new ResourceLocation("minecraft:iron_ingot"),-1)>=15&&recipe("minecraft:iron_block"))return true;
+            if(beacon<1&&count(new ResourceLocation("minecraft:nether_star"),-1)>0&&recipe("minecraft:beacon"))return true;
+            return false;
+        }
         int mask=0;
         for(int i=0;i<6;i++)if(count(LURE,i)>0)mask|=1<<i;
         int stars=count(new ResourceLocation("minecraft:nether_star"),-1),egg=count(new ResourceLocation("minecraft:dragon_egg"),-1);
