@@ -224,6 +224,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         nextDefenseScan=age+200;
         int available=constructionStock();
         if(available<4)return;
+        // Keep basic crafting stock available while repairing the perimeter.
+        available=Math.max(0,available-4);if(available==0)return;
         for(var offset:SurvivorBlueprint.perimeter(0,1,2)){
             if(available<=0)break;
             BlockPos p=home.add(offset.x(),offset.y(),offset.z());
@@ -338,8 +340,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             target!=null,visible,gunSlot>=0,findMelee()>=0,target==null?Double.MAX_VALUE:getDistanceSq(target),
             profile.preferredMinRangeSq(),profile.fleeWhenSwelling(),dangerousHere(),buildGoal!=null,loot!=null));
         if(target!=null&&action!=SurvivorBrain.Action.EVADE){
-            if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
-            else if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),gunSlot>=0,getHeldItemOffhand().getItem()==Items.SHIELD)) action=SurvivorBrain.Action.RETREAT;
+            if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),gunSlot>=0,getHeldItemOffhand().getItem()==Items.SHIELD)) action=SurvivorBrain.Action.RETREAT;
+            else if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
         }
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
         activity=retreat?"retreat":action==SurvivorBrain.Action.EAT?"eat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
@@ -413,7 +415,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             double d=p.distanceSq(escapeGoal);
             if(d<score){score=d;best=p;}
         }
-        if(best!=null){lookAt(best.getX()+.5,posY+getEyeHeight(),best.getZ()+.5);moveForward=.8f;if(onGround&&best.getY()>here.getY())jump();}
+        if(best!=null){double dx=best.getX()+.5-posX,dz=best.getZ()+.5-posZ;float want=(float)Math.toDegrees(Math.atan2(dz,dx))-90;lookAt(best.getX()+.5,posY+getEyeHeight(),best.getZ()+.5);if(Math.abs(MathHelper.wrapDegrees(want-rotationYaw))<35){moveForward=.8f;if(onGround&&best.getY()>here.getY())jump();}}
     }
     private BlockPos patrolGoal() {
         for (int i = 0; i < 8; i++) {
