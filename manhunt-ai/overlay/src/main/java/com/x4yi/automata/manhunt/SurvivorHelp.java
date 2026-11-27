@@ -18,7 +18,7 @@ final class SurvivorHelp {
             Request r=tasks.get(helper.getUniqueID());
             if(r==null)continue;
             var caller=r.requester();
-            if(!caller.isEntityAlive()||!live.contains(caller.getUniqueID())||caller.world!=helper.world||now>=r.expires()||helper.helpPriority()>=r.need().priority||helper.getDistanceSq(caller)>48*48){
+            if(!caller.isEntityAlive()||!live.contains(caller.getUniqueID())||caller.world!=helper.world||now>=r.expires()||helper.continuationPriority(caller,r.need().priority>=75)>=r.need().priority||helper.getDistanceSq(caller)>48*48){
                 helper.clearHelp();tasks.remove(helper.getUniqueID());say(helper,caller.getName()+", не могу продолжить помощь: меняю задачу.");continue;
             }
             if(r.need()==SurvivorHelpPolicy.Need.COMBAT||r.need()==SurvivorHelpPolicy.Need.EMERGENCY){
@@ -35,7 +35,7 @@ final class SurvivorHelp {
         }
         for(var caller:bots){
             var need=caller.helpNeed();
-            if(!caller.autonomousEnabled()||need==null||now<nextRequest.getOrDefault(caller.getUniqueID(),0L)||tasks.values().stream().anyMatch(r->r.requester()==caller))continue;
+            if(!caller.isEntityAlive()||!caller.autonomousEnabled()||need==null||now<nextRequest.getOrDefault(caller.getUniqueID(),0L)||tasks.values().stream().anyMatch(r->r.requester()==caller))continue;
             SurvivorPlayer helper=null;double distance=32*32;
             for(var other:bots){
                 if(other==caller||!other.isEntityAlive()||!other.autonomousEnabled()||other.world!=caller.world||other.homePosition().distanceSq(caller.homePosition())>32*32||tasks.containsKey(other.getUniqueID()))continue;
