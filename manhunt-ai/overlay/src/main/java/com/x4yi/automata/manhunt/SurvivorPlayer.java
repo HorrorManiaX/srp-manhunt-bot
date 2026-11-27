@@ -306,7 +306,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(e.isDead) continue;
             var id=net.minecraft.entity.EntityList.getKey(e);
             if(SrpTacticalClassifier.isSrpAreaHazardId(id) || SrpTacticalClassifier.isSrpExplosiveId(id)) {
-                if(getDistanceSq(e)<36 && canEntityBeSeen(e)) {explosionAlert(e.getPosition());return;}
+                if(getDistanceSq(e)<36 && canEntityBeSeen(e)) {if(age>=explosionUntil||lastThreat==null||lastThreat.distanceSq(e.getPosition())>9)explosionAlert(e.getPosition());return;}
             } else if(SrpTacticalClassifier.isSrpProjectileId(id) || e instanceof net.minecraft.entity.projectile.EntityArrow) {
                 double dx=posX-e.posX,dy=posY+.8-e.posY,dz=posZ-e.posZ;
                 double speed=e.motionX*e.motionX+e.motionY*e.motionY+e.motionZ*e.motionZ;
@@ -314,7 +314,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
                 double t=(dx*e.motionX+dy*e.motionY+dz*e.motionZ)/speed;
                 if(t<0 || t>8) continue;
                 double x=dx-e.motionX*t,y=dy-e.motionY*t,z=dz-e.motionZ*t;
-                if(x*x+y*y+z*z<2.25 && canEntityBeSeen(e)) {explosionAlert(e.getPosition());return;}
+                if(x*x+y*y+z*z<2.25 && canEntityBeSeen(e)) {if(age>=explosionUntil||lastThreat==null||lastThreat.distanceSq(e.getPosition())>9)explosionAlert(e.getPosition());return;}
             }
         }
     }
@@ -536,14 +536,15 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             scanThreats();
             nextScan=age+SurvivorBrain.scanInterval(target!=null || age<alertUntil,stressed);
         }
-        if(age>=nextHazardScan && age>=explosionUntil) {nextHazardScan=age+(stressed?12:target!=null?3:8);scanHazards();}
+        if(age>=nextHazardScan) {nextHazardScan=age+(stressed?12:target!=null?3:8);scanHazards();}
         if(target==null && !stressed && age>=nextLootScan) {nextLootScan=age+40;scanLoot();}
         if(loot!=null && (loot.isDead || loot.cannotPickup() || getDistanceSq(loot)>144)) loot=null;
         if(target==null)closeEnemies=0;
         if (target != null && (target.world != world || !target.isEntityAlive() || !ManhuntCompat.isHostile(target) || getDistanceSq(target) > 24 * 24)) target = null;
         boolean visible=target!=null && canEntityBeSeen(target);
         if(visible && age>=explosionUntil) {lastThreat=target.getPosition();lastThreatTick=age;}
-        if(target!=null && !visible && age-lastThreatTick>60) target=null;
+        if(target!=null && !visible && age-lastThreatTick>60){target=null;closeEnemies=0;}
+        visible=target!=null&&visible;
         var profile=SrpTacticalClassifier.classify(target);
         var action=SurvivorBrain.choose(new SurvivorBrain.Situation(getHealth(),getMaxHealth(),getFoodStats().needFood(),foodSlot>=0,
             target!=null,visible,hasLoadedGun(),findMelee()>=0,target==null?Double.MAX_VALUE:getDistanceSq(target),
