@@ -218,7 +218,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     String infrastructureStatus(){return "lava="+lavaTrap.status()+"; turret="+defenseStation.status();}
     boolean autonomousEnabled(){return work.isEnabled();}
     SurvivorProgression.Role role(){return work.role();}
-    SurvivorPersonality.Style personality(){return SurvivorPersonality.style(getUniqueID().hashCode()>>>8);}
+    SurvivorPersonality.Style personality(){return SurvivorPersonality.forName(getName(),getUniqueID().hashCode()>>>8);}
     boolean calmForSupply(){return !stressed&&target==null&&age>=alertUntil&&!dangerousHere()&&!isHandActive()&&age>=reloadUntil;}
     SurvivorChatPolicy.State chatState(){
         return new SurvivorChatPolicy.State(activity,Math.round(getHealth()),Math.round(getMaxHealth()),getFoodStats().getFoodLevel(),findFood()>=0,SurvivorWeapons.loadedGun(this)>=0,target!=null&&target.isEntityAlive()&&canEntityBeSeen(target),canHelpSafely(true));

@@ -72,16 +72,16 @@ public final class SurvivorChatPolicy {
             case TRADE -> pick(r,"что тебе нужно конкретно?","а что предлагаешь?","давай сначала разберемся с ресурсами");
             case GAME -> pick(r,"сука ну и модпак конечно","тут сначала еда и нормальное укрытие, потом уже стволы","я бы в одиночку на паразитов не лез","крафты тут изменены, лучше проверить JEI","самое сложное тут не сдохнуть пока добываешь ресурсы");
             case JOKE -> pick(r,"ахах жиза","бля ахах","хах, ну это сильно","в голос","ага, знакомая ситуация");
-            case YES -> pick(r,"вот и норм","ну тогда ладно","понял","ага, договорились");
-            case NO -> pick(r,"а, понял","ну бывает","ладно, разберемся","не вопрос");
+            case YES -> switch(previous){case "HELP"->pick(r,"понял, держись там","ага, смотри по обстановке");case "TRADE","GEAR","FOOD"->pick(r,"ага, тогда понятно","ну ок, разберемся с этим");default->pick(r,"вот и норм","ну тогда ладно","понял","ага, договорились");};
+            case NO -> switch(previous){case "HELP"->pick(r,"блин, тогда аккуратнее","а что там сейчас?");case "FOOD","GEAR","TRADE"->pick(r,"а, тогда надо искать дальше","ясно, жаль");default->pick(r,"а, понял","ну бывает","ладно, разберемся","не вопрос");};
             case QUESTION -> previous.isEmpty()?pick(r,"а что именно имеешь в виду?","хз, уточни немного","смотря о чем ты","поясни, не понял с первого раза"):pick(r,"ты про то что до этого обсуждали?","уточни чуть, чтобы не наврать","если про прошлое сообщение, то подробнее скажи");
             default -> pick(r,"понял тебя","ну бывает","а дальше что было?","серьезно?","вот это дела","бля, знакомо","и как в итоге?");
         };
     }
     public static String stylize(String s,SurvivorPersonality.Style style,Random r){
-        if(style==SurvivorPersonality.Style.RESERVED&&s.length()>70&&s.contains(","))return s.substring(0,s.indexOf(','));
+        if(style==SurvivorPersonality.Style.RESERVED&&s.length()>70&&s.contains(",")&&r.nextBoolean())return s.substring(0,s.indexOf(','));
         if(style==SurvivorPersonality.Style.FRIENDLY&&r.nextInt(6)==0&&s.length()<65&&!s.contains("братан"))return s+", братан";
-        if(style==SurvivorPersonality.Style.ANALYTICAL&&r.nextInt(4)==0&&s.length()>0)return Character.toUpperCase(s.charAt(0))+s.substring(1)+".";
+        if(style==SurvivorPersonality.Style.ANALYTICAL&&r.nextInt(4)==0&&s.length()>0)return Character.toUpperCase(s.charAt(0))+s.substring(1)+(s.endsWith("?")||s.endsWith("!")||s.endsWith(".")?"":".");
         return s;
     }
 }

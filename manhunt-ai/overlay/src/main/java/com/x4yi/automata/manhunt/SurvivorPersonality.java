@@ -4,6 +4,17 @@ public final class SurvivorPersonality {
     public enum Style { PRACTICAL, CAUTIOUS, FRIENDLY, RESERVED, OPTIMISTIC, ANALYTICAL }
     private SurvivorPersonality(){}
     public static Style style(int hash){return Style.values()[Math.floorMod(hash,Style.values().length)];}
+    public static Style forName(String name,int fallback){
+        return switch(name.toLowerCase(java.util.Locale.ROOT)){
+            case "alex" -> Style.PRACTICAL;
+            case "boris" -> Style.FRIENDLY;
+            case "mira" -> Style.CAUTIOUS;
+            case "viktor" -> Style.RESERVED;
+            case "lena" -> Style.OPTIMISTIC;
+            case "denis" -> Style.ANALYTICAL;
+            default -> style(fallback);
+        };
+    }
     public static String description(Style style){
         return switch(style){
             case PRACTICAL -> "практичный, короткие ответы";

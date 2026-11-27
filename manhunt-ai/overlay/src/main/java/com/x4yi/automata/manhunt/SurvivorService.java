@@ -551,10 +551,13 @@ public final class SurvivorService extends CommandBase {
         var faction=side(sender);var topic=SurvivorChatPolicy.topic(msg);
         ChatMemory memory=chatMemory.get(sender.getUniqueID());
         if(memory!=null&&(ticks-memory.tick()>1200||memory.side()!=faction))memory=null;
+        boolean explicit=false;
+        for(SurvivorPlayer bot:bots.values())if(SurvivorChatPolicy.addressed(msg,bot.getName())){explicit=true;break;}
         SurvivorPlayer selected=null;boolean direct=false;double best=-Double.MAX_VALUE;
         for(SurvivorPlayer bot:bots.values()){
             if(!bot.isEntityAlive()||bot.world!=sender.world||ticks<chatCooldown.getOrDefault(key(bot.getName()),0))continue;
             boolean named=SurvivorChatPolicy.addressed(msg,bot.getName());
+            if(explicit&&!named)continue;
             boolean continuation=memory!=null&&memory.botKey().equals(key(bot.getName()));
             boolean group=SurvivorChatPolicy.group(msg);
             boolean nearby=sender.getDistanceSq(bot)<=64*64;
@@ -576,7 +579,7 @@ public final class SurvivorService extends CommandBase {
             String[] replies={"братан, вижу тебя, попробую прикрыть","держись, попробую помочь","вижу тебя, щас попробую подойти","бля, держись, попробую прикрыть"};
             reply=replies[selected.getRNG().nextInt(replies.length)];
         }
-        var previous=memory==null?"":memory.topic().name();
+        var previous=memory==null||!continued?"":memory.topic().name();
         if(reply==null){
             for(int i=0;i<6;i++){
                 reply=SurvivorChatPolicy.answer(topic,faction,selected.personality(),selected.chatState(),previous,selected.getRNG());
@@ -584,7 +587,10 @@ public final class SurvivorService extends CommandBase {
                 if(!chatRecent.getOrDefault(botKey,new java.util.ArrayDeque<>()).contains(reply))break;
             }
         }
-        if(chatRecent.getOrDefault(botKey,new java.util.ArrayDeque<>()).contains(reply))return;
+        if(chatRecent.getOrDefault(botKey,new java.util.ArrayDeque<>()).contains(reply)){
+            if(!direct&&!continued)return;
+            chatRecent.get(botKey).pollFirst();
+        }
         int delay=18+selected.getRNG().nextInt(43);
         var turn=new ChatTurn(botKey,selected.getEntityId(),sender.getUniqueID(),faction,ticks+delay,ticks+360,msg,reply,topic);
         // Optional local model only for open-ended conversation. Sensitive/identity/action topics use deterministic policy.
