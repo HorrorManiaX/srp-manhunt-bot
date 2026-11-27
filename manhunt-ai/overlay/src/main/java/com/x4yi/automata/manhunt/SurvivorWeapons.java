@@ -43,6 +43,66 @@ final class SurvivorWeapons {
             }
         }
     }
+    private static final class AmmoApi {
+        static Class<?> magazine,bullet;
+        static Field magType,bulletType,name,acceptedMagazines,acceptedBullets;
+        static boolean available;
+        static {
+            try{
+                magazine=Class.forName("com.modularwarfare.common.guns.ItemAmmo");
+                bullet=Class.forName("com.modularwarfare.common.guns.ItemBullet");
+                magType=magazine.getField("type");bulletType=bullet.getField("type");
+                name=Class.forName("com.modularwarfare.common.type.BaseType").getField("internalName");
+                Class<?> gt=Class.forName("com.modularwarfare.common.guns.GunType");
+                acceptedMagazines=gt.getField("acceptedAmmo");acceptedBullets=gt.getField("acceptedBullets");
+                available=true;
+            }catch(ReflectiveOperationException|RuntimeException|LinkageError e){available=false;}
+        }
+    }
+    private static java.util.List<net.minecraft.item.Item> ammoItems;
+    private static boolean accepts(String[] names,String name){
+        if(names==null||name==null)return false;
+        for(String n:names)if(name.equals(n))return true;
+        return false;
+    }
+    private static boolean matchesAmmo(net.minecraft.item.Item item,Object gunType)throws ReflectiveOperationException{
+        if(AmmoApi.magazine.isInstance(item))
+            return accepts((String[])AmmoApi.acceptedMagazines.get(gunType),(String)AmmoApi.name.get(AmmoApi.magType.get(item)));
+        if(AmmoApi.bullet.isInstance(item))
+            return accepts((String[])AmmoApi.acceptedBullets.get(gunType),(String)AmmoApi.name.get(AmmoApi.bulletType.get(item)));
+        return false;
+    }
+    static boolean craftAmmo(SurvivorPlayer bot){
+        if(!Api.available||!AmmoApi.available)return false;
+        try{
+            ItemStack gun=ItemStack.EMPTY;
+            for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(isGun(s)){gun=s;break;}}
+            if(gun.isEmpty())return false;
+            Object type=Api.type.get(gun.getItem());
+            if(ammoItems==null){
+                ammoItems=new java.util.ArrayList<>();
+                for(var item:net.minecraftforge.fml.common.registry.ForgeRegistries.ITEMS.getValuesCollection())
+                    if(AmmoApi.magazine.isInstance(item)||AmmoApi.bullet.isInstance(item))ammoItems.add(item);
+            }
+            int magazines=0,bullets=0;
+            for(int i=0;i<36;i++){
+                ItemStack s=bot.inventory.getStackInSlot(i);
+                if(!s.isEmpty()&&matchesAmmo(s.getItem(),type)){
+                    if(AmmoApi.magazine.isInstance(s.getItem()))magazines+=s.getCount();else bullets+=s.getCount();
+                }
+            }
+            int attempts=0;
+            for(var item:ammoItems){
+                if(!matchesAmmo(item,type))continue;
+                if(AmmoApi.magazine.isInstance(item)?magazines>=2:bullets>=32)continue;
+                for(var id:SurvivorCrafting.recipesFor(item)){
+                    if(++attempts>8)return false;
+                    if(SurvivorCrafting.craft(bot,id,true))return true;
+                }
+            }
+        }catch(ReflectiveOperationException|RuntimeException|LinkageError e){AmmoApi.available=false;AutomataMod.LOGGER.warn("AI ammo adapter disabled",e);}
+        return false;
+    }
     static boolean isGun(ItemStack s){return Api.available&&!s.isEmpty()&&Api.gun.isInstance(s.getItem());}
     static boolean isLoaded(ItemStack s){
         try{return isGun(s)&&Boolean.TRUE.equals(Api.hasShot.invoke(null,s));}
