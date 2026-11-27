@@ -617,6 +617,18 @@ public final class SurvivorService extends CommandBase {
             player.sendMessage(new TextComponentString("Состав участников: /participants"));
         }
     }
+    // Explicit canonical public chat bridge, independent of agent presence and cooldown.
+    @SubscribeEvent(priority=net.minecraftforge.fml.common.eventhandler.EventPriority.LOWEST,receiveCanceled=false)
+    public void bridgePlayerChat(ServerChatEvent event){
+        EntityPlayerMP player=event.getPlayer();
+        if(player instanceof SurvivorPlayer||player instanceof net.minecraftforge.common.util.FakePlayer)return;
+        String text=event.getMessage();
+        if(text==null||text.isBlank())return;
+        com.google.gson.JsonObject data=new com.google.gson.JsonObject();
+        data.addProperty("type","chat");data.addProperty("player",player.getName());
+        data.addProperty("text",text);data.addProperty("ai",false);
+        AutomataMod.LOGGER.info("MANHUNT_PLAYER_CHAT "+data.toString());
+    }
     private int nextHumanHelp;
     @SubscribeEvent(receiveCanceled=false) public void onChat(ServerChatEvent event) {
         EntityPlayerMP sender=event.getPlayer();
