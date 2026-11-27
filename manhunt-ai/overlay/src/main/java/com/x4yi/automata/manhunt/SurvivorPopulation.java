@@ -48,7 +48,7 @@ final class SurvivorPopulation {
     }
     void reset(){config=null;tick=0;nextJoin=200;failures=0;camp=null;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
     void tick(MinecraftServer server,SurvivorService service,boolean stressed){
-        init();tick++;
+        tick+=20;if(tick<nextJoin)return;init();
         if(!SurvivorPopulationPolicy.mayJoin(enabled,stressed,service.activeCount(),target,tick,nextJoin))return;
         WorldServer world=server.getWorld(0);
         if(world==null){nextJoin=tick+200;return;}
@@ -73,6 +73,10 @@ final class SurvivorPopulation {
             break;
         }
         nextJoin=tick+SurvivorPopulationPolicy.retryDelay(++failures);
+    }
+    void failure(Throwable ex){
+        nextJoin=tick+6000;
+        if(++failures==1)AutomataMod.LOGGER.warn("Manhunt AI population director temporarily paused",ex);
     }
     private void success(){failures=0;nextJoin=tick+240;}
     private BlockPos pickSite(WorldServer world,SurvivorService service){
