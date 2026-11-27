@@ -64,7 +64,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | park <name> | resume <name> | parked | remove <name> | clear | goal <name> <item-id|clear> | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==1 && args[0].equals("parked")){
@@ -96,6 +96,15 @@ public final class SurvivorService extends CommandBase {
             try{activate(server,world,bot);}
             catch(CommandException ex){roster.park(k,bot);throw ex;}
             sender.sendMessage(new TextComponentString("Resumed "+name+" (AI)"));return;
+        }
+        if((args.length==2&&args[0].equals("furnace"))||(args.length==3&&args[0].equals("smelt"))){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null)throw new CommandException("AI survivor not found");
+            if(sender.getEntityWorld()!=bot.world)throw new CommandException("Same dimension required");
+            if(args[0].equals("furnace")){
+                if(!bot.furnaceStation())throw new CommandException("Needs carried furnace and a permitted placement");
+            }else if(!bot.smelt(new ResourceLocation(args[2])))throw new CommandException("Needs smeltable carried item and no pending furnace job");
+            sender.sendMessage(new TextComponentString("Production task queued"));return;
         }
         if(args.length==3 && args[0].equals("goal")){
             SurvivorPlayer bot=bots.get(key(args[1]));
