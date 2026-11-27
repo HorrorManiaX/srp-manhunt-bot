@@ -30,6 +30,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private final BlockPos home;
     private final SurvivorWork work;
     private final SurvivorFurnace furnace;
+    private final SurvivorFood foodRecovery;
     private int reloadUntil, nextReload;
     private AtomicBoolean cancelled = new AtomicBoolean();
     private CompletableFuture<PathResult> pending;
@@ -56,6 +57,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         this.home = pos;
         this.work=new SurvivorWork(this,pos);
         this.furnace=new SurvivorFurnace(this);
+        this.foodRecovery=new SurvivorFood(this);
         this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
             @Override public void sendPacket(Packet<?> packet) { /* No remote client. */ }
         };
@@ -85,7 +87,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     void clearTechGoal(){work.clearGoal();}
     void faceBlock(BlockPos p){lookAt(p.getX()+.5,p.getY()+.5,p.getZ()+.5);}
     int equipInventorySlot(int i){if(i<0||i>=36)return -1;if(i>=9){int h=inventory.currentItem;ItemStack old=inventory.getStackInSlot(h);inventory.setInventorySlotContents(h,inventory.getStackInSlot(i));inventory.setInventorySlotContents(i,old);i=h;inventory.markDirty();}inventory.currentItem=i;return i;}
-    public void cancelPlanning() { work.clear();invalidateRoute(); }
+    public void cancelPlanning() { foodRecovery.interrupt();work.clear();invalidateRoute(); }
     private void invalidateRoute() {
         cancelled.set(true);
         cancelled = new AtomicBoolean();
@@ -272,13 +274,18 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             setHeldItem(EnumHand.OFF_HAND,shield);inventory.markDirty();break;
         }
     }
+    boolean safeFood(ItemStack s){
+        if(s.isEmpty()||!(s.getItem() instanceof ItemFood))return false;
+        var item=s.getItem();
+        return item!=Items.SPIDER_EYE&&item!=Items.POISONOUS_POTATO&&item!=Items.ROTTEN_FLESH&&!(item==Items.FISH&&s.getMetadata()==3);
+    }
+    int bestMelee(){return findMelee();}
+    void faceEntityForFood(EntityLivingBase e){lookAt(e.posX,e.posY+e.getEyeHeight(),e.posZ);}
     private int findFood() {
         int best=-1;float score=-1;
         for(int i=0;i<36;i++){
             ItemStack s=inventory.getStackInSlot(i);
-            if(s.isEmpty()||!(s.getItem() instanceof ItemFood food))continue;
-            var item=s.getItem();
-            if(item==Items.SPIDER_EYE||item==Items.POISONOUS_POTATO||item==Items.ROTTEN_FLESH||item==Items.FISH&&s.getMetadata()==3)continue;
+            if(!safeFood(s)||!(s.getItem() instanceof ItemFood food))continue;
             float v=food.getHealAmount(s)+2*food.getSaturationModifier(s);
             if(v>score){score=v;best=i;}
         }
@@ -347,10 +354,12 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         activity=retreat?"retreat":action==SurvivorBrain.Action.EAT?"eat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
         if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
         if(action==SurvivorBrain.Action.PATROL && buildGoal==null&&!stressed&&furnace.active())furnace.tick(age);
-        if(action==SurvivorBrain.Action.PATROL && buildGoal==null && (!furnace.active()||furnace.destination()==null))work.plan(stressed);
+        if(action==SurvivorBrain.Action.PATROL&&buildGoal==null&&!furnace.active())foodRecovery.plan(age,stressed);
+        else foodRecovery.interrupt();
+        if(action==SurvivorBrain.Action.PATROL && buildGoal==null && foodRecovery.destination()==null&&(!furnace.active()||furnace.destination()==null))work.plan(stressed);
         else work.interrupt();
-        BlockPos jobGoal=furnace.active()&&furnace.destination()!=null?furnace.destination():work.destination();
-        if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && !jobGoal.equals(plannedGoal) && pending==null)nextPlan=0;
+        BlockPos jobGoal=furnace.active()&&furnace.destination()!=null?furnace.destination():foodRecovery.destination()!=null?foodRecovery.destination():work.destination();
+        if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null)nextPlan=0;
         if(action==SurvivorBrain.Action.PATROL && gunSlot<0 && age>=nextReload && !stressed){
             nextReload=age+100;
             int reload=SurvivorWeapons.reload(this);
@@ -401,7 +410,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if (isHandActive() && !(action==SurvivorBrain.Action.MELEE && getActiveHand()==EnumHand.OFF_HAND && age<nextAttack)) stopActiveHand();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
             if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
-            if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed && (!furnace.active()||furnace.destination()==null))work.act();
+            if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed && (!furnace.active()||furnace.destination()==null)){if(foodRecovery.destination()!=null)foodRecovery.act(age);else work.act();}
         }
         onUpdateEntity();
     }
