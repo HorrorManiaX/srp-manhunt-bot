@@ -115,5 +115,7 @@ for f in java_root.rglob('*.java'):
 # X4UI is used only to compile dormant upstream classes; it is not a runtime mod dependency.
 gradle=target/'build.gradle'
 s=gradle.read_text(encoding='utf-8')
-s=s.replace("implementation deobf('maven.modrinth:x4ui:r1.0b7')","compileOnly deobf('maven.modrinth:x4ui:r1.0b7')")
+# Upstream GUI unit tests still require X4UI on their compile/runtime classpath.
+# implementation is a Gradle build dependency, not a bundled or mandatory Forge mod dependency.
+# Keep it unchanged for the upstream test suite.
 gradle.write_text(s,encoding='utf-8')
