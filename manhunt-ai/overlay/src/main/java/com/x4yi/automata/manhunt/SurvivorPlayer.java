@@ -320,7 +320,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     private static boolean safeBuildingBlock(ItemBlock b){
         var block=b.getBlock();
-        return block==net.minecraft.init.Blocks.COBBLESTONE||block==net.minecraft.init.Blocks.STONE||block==net.minecraft.init.Blocks.PLANKS||block==net.minecraft.init.Blocks.BRICK_BLOCK||block==net.minecraft.init.Blocks.STONEBRICK;
+        return block==net.minecraft.init.Blocks.OBSIDIAN||block==net.minecraft.init.Blocks.COBBLESTONE||block==net.minecraft.init.Blocks.STONE||block==net.minecraft.init.Blocks.PLANKS||block==net.minecraft.init.Blocks.BRICK_BLOCK||block==net.minecraft.init.Blocks.STONEBRICK;
     }
     int missingWallBlocks(){
         int missing=0;
@@ -334,6 +334,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         for(int i=0;i<36;i++){ItemStack stack=inventory.getStackInSlot(i);if(!stack.isEmpty()&&stack.getItem()==net.minecraft.item.Item.getItemFromBlock(block))return true;}
         return false;
     }
+    boolean needsGate(){BlockPos p=home.add(0,0,-2);return world.isBlockLoaded(p)&&world.isAirBlock(p);}
     boolean needsLadder(){
         for(int y=0;y<=3;y++){BlockPos p=home.add(1,y,1);if(world.isBlockLoaded(p)&&world.isAirBlock(p))return true;}
         return false;
@@ -460,6 +461,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if (slot < 0) { skippedBlocks+=1+fortification.size();buildGoal=null;buildApproach=null;fortification.clear();invalidateRoute();return; }
         for (EnumFacing side : EnumFacing.values()) {
             if(buildItem!=null&&buildItem.toString().equals("minecraft:ladder")&&side!=EnumFacing.WEST)continue;
+            if(buildItem!=null&&(buildItem.toString().equals("minecraft:fence_gate")||buildItem.toString().equals("minecraft:torch"))&&side!=EnumFacing.UP)continue;
             BlockPos support = buildGoal.offset(side.getOpposite());
             if (!world.isBlockLoaded(support) || world.isAirBlock(support) || !SurvivorPermissions.allowed(this,support,true)) continue;
             net.minecraft.util.math.Vec3d hit = new net.minecraft.util.math.Vec3d(support).add(.5 + side.getXOffset()*.5, .5 + side.getYOffset()*.5, .5 + side.getZOffset()*.5);
@@ -476,7 +478,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         age++;
         if(age%600==0)routeFailures.clear();
         planFortification();
-        if(age%10==0&&target==null)closePassedGate();
+        if(age%10==0&&!dangerousHere())closePassedGate();
         if(gunSlot>=0&&!SurvivorWeapons.isLoaded(inventory.getStackInSlot(gunSlot)))gunSlot=-1;
         if(bowSlot>=0&&inventory.getStackInSlot(bowSlot).getItem()!=Items.BOW)bowSlot=-1;
         if(age>=nextInventoryScan) {
@@ -647,6 +649,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(best!=null){double dx=best.getX()+.5-posX,dz=best.getZ()+.5-posZ;float want=(float)Math.toDegrees(Math.atan2(dz,dx))-90;lookAt(best.getX()+.5,posY+getEyeHeight(),best.getZ()+.5);if(Math.abs(MathHelper.wrapDegrees(want-rotationYaw))<35){moveForward=.8f;if(onGround&&best.getY()>here.getY())jump();}}
     }
     private BlockPos patrolGoal() {
+        if(hasLoadedGun()&&(role()==SurvivorProgression.Role.GUARD||role()==SurvivorProgression.Role.SCOUT)){
+            BlockPos ladderTop=home.add(1,3,1);
+            if(world.isBlockLoaded(ladderTop)&&world.getBlockState(ladderTop).getBlock()==net.minecraft.init.Blocks.LADDER){
+                BlockPos watch=home.add(-1,3,0);
+                if(standable(watch))return watch;
+            }
+        }
         for (int i = 0; i < 8; i++) {
             BlockPos p = home.add(rand.nextInt(25) - 12, rand.nextInt(5) - 2, rand.nextInt(25) - 12);
             if (world.isBlockLoaded(p) && world.isBlockLoaded(p.up()) && world.isBlockLoaded(p.down()) && CellClassifier.isPassable(world, p) && CellClassifier.isPassable(world, p.up())
@@ -690,7 +699,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(!(state.getBlock() instanceof net.minecraft.block.BlockFenceGate)||!Boolean.TRUE.equals(state.getValue(net.minecraft.block.BlockFenceGate.OPEN))){routeGate=null;return;}
         if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(routeGate).grow(.7)).isEmpty()||!SurvivorPermissions.interact(this,routeGate))return;
         var hit=world.rayTraceBlocks(getPositionEyes(1),new net.minecraft.util.math.Vec3d(routeGate).add(.5,.5,.5),false,true,false);
-        if(hit!=null&&routeGate.equals(hit.getBlockPos()))interactionManager.processRightClickBlock(this,world,getHeldItemMainhand(),EnumHand.MAIN_HAND,routeGate,hit.sideHit,.5f,.5f,.5f);
+        if(hit==null||routeGate.equals(hit.getBlockPos()))interactionManager.processRightClickBlock(this,world,getHeldItemMainhand(),EnumHand.MAIN_HAND,routeGate,hit==null?EnumFacing.UP:hit.sideHit,.5f,.5f,.5f);
         routeGate=null;
     }
     private void followPath() {
