@@ -186,6 +186,23 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private String russianActivity() {
         return switch (activity) { case "combat" -> "в бою"; case "retreat" -> "отступаю"; case "build" -> "укрепляю позицию"; case "scavenge" -> "собираю ресурсы"; case "eat" -> "восстанавливаю силы"; default -> "патрулирую"; };
     }
+    private void equipVanillaArmor(){
+        for(int i=0;i<36;i++){
+            ItemStack s=inventory.getStackInSlot(i);
+            if(s.isEmpty()||!(s.getItem() instanceof net.minecraft.item.ItemArmor armor)||s.getItem().getRegistryName()==null||!"minecraft".equals(s.getItem().getRegistryName().getNamespace()))continue;
+            var slot=armor.armorType;
+            ItemStack old=getItemStackFromSlot(slot);
+            if(!old.isEmpty() && (!(old.getItem() instanceof net.minecraft.item.ItemArmor worn)||worn.damageReduceAmount>=armor.damageReduceAmount))continue;
+            inventory.setInventorySlotContents(i,old);
+            setItemStackToSlot(slot,s);inventory.markDirty();
+        }
+        if(getHeldItemOffhand().isEmpty())for(int i=0;i<36;i++){
+            ItemStack shield=inventory.getStackInSlot(i);
+            if(shield.getItem()!=Items.SHIELD||shield.isEmpty())continue;
+            inventory.setInventorySlotContents(i,ItemStack.EMPTY);
+            setHeldItem(EnumHand.OFF_HAND,shield);inventory.markDirty();break;
+        }
+    }
     private int findFood() {
         for (int i=0; i<36; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemFood && !inventory.getStackInSlot(i).isEmpty()) return i;
         return -1;
@@ -219,6 +236,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         planFortification();
         if(age>=nextInventoryScan) {
             nextInventoryScan=age+10;
+            if(target==null&&!stressed&&age%100<10)equipVanillaArmor();
             gunSlot=SurvivorWeapons.loadedGun(this);foodSlot=findFood();
         }
         if(age>=nextScan) {
@@ -275,7 +293,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             lookAt(target.posX, target.posY + target.getEyeHeight() * .75, target.posZ);
             if (age >= nextAttack && age>=reloadUntil) nextAttack = age + SurvivorWeapons.fire(this,target);
         } else if (target != null && action==SurvivorBrain.Action.MELEE) {
-            if (isHandActive()) stopActiveHand();
+            if (isHandActive() && (getActiveHand()!=EnumHand.OFF_HAND || age>=nextAttack)) stopActiveHand();
             int melee = findMelee();
             if (melee >= 0) equipInventorySlot(melee);
             lookAt(target.posX, target.posY + target.getEyeHeight(), target.posZ);
@@ -283,13 +301,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
                 nextAttack = age + 12 + rand.nextInt(7);
                 attackTargetEntityWithCurrentItem(target);
                 swingArm(EnumHand.MAIN_HAND);
-            }
+            } else if(getHeldItemOffhand().getItem()==Items.SHIELD && !isHandActive() && age<nextAttack) setActiveHand(EnumHand.OFF_HAND);
         } else { followPath(); if(retreat && moveForward>0 && getFoodStats().getFoodLevel()>6) setSprinting(true); }
         if (action==SurvivorBrain.Action.EAT && foodSlot >= 0 && inventory.getStackInSlot(foodSlot).getItem() instanceof ItemFood && !inventory.getStackInSlot(foodSlot).isEmpty()) {
             foodSlot=equipInventorySlot(foodSlot); moveForward = 0;
             if (!isHandActive()) setActiveHand(EnumHand.MAIN_HAND);
         } else {
-            if (isHandActive()) stopActiveHand();
+            if (isHandActive() && !(action==SurvivorBrain.Action.MELEE && getActiveHand()==EnumHand.OFF_HAND && age<nextAttack)) stopActiveHand();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
             if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
             if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed)work.act();
