@@ -28,6 +28,27 @@ public final class SurvivorService extends CommandBase {
     private static final int MAX = 6;
     private final Map<String, SurvivorPlayer> bots = new LinkedHashMap<>();
     private SurvivorService() {}
+    private double meanAiMs;
+    private long lastTickNanos;
+    private double meanTickMs=50;
+    private int ticks;
+    private boolean stressed;
+    @SubscribeEvent(receiveCanceled=false)
+    public void onAttacked(net.minecraftforge.event.entity.living.LivingAttackEvent event) {
+        if(event.getEntityLiving().world.isRemote || !(event.getEntityLiving() instanceof SurvivorPlayer victim)) return;
+        net.minecraft.entity.Entity attacker=event.getSource().getTrueSource();
+        if(attacker instanceof net.minecraft.entity.EntityLivingBase living && com.x4yi.automata.compat.ManhuntCompat.isHostile(living)) {
+            victim.alert(living,living.getPosition());
+            for(SurvivorPlayer ally:bots.values()) if(ally!=victim && ally.world==victim.world && ally.getDistanceSq(victim)<=144 && ally.canEntityBeSeen(victim)) ally.alert(null,victim.getPosition());
+        } else victim.alert(null,victim.getPosition());
+    }
+    @SubscribeEvent(receiveCanceled=false)
+    public void onExplosion(net.minecraftforge.event.world.ExplosionEvent.Start event) {
+        if(event.getWorld().isRemote) return;
+        net.minecraft.util.math.Vec3d p=event.getExplosion().getPosition();
+        BlockPos pos=new BlockPos(p.x,p.y,p.z);
+        for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
+    }
     @Override public String getName() { return "manhuntai"; }
     @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | remove <name> | clear | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
@@ -61,7 +82,8 @@ public final class SurvivorService extends CommandBase {
             throw new CommandException(getUsage(sender));
         }
         if (args.length == 1 && args[0].equals("list")) {
-            sender.sendMessage(new TextComponentString("AI survivors: " + bots.size() + "/" + MAX));
+            sender.sendMessage(new TextComponentString("AI survivors: " + bots.size() + "/" + MAX
+                + " | AI avg " + String.format(java.util.Locale.ROOT,"%.2f",meanAiMs) + " ms | tick interval " + String.format(java.util.Locale.ROOT,"%.1f",meanTickMs) + " ms | degraded=" + stressed));
             for (SurvivorPlayer bot : bots.values()) sender.sendMessage(new TextComponentString(bot.getName() + " " + bot.activity() + " HP=" + bot.getHealth()));
             return;
         }
@@ -111,7 +133,7 @@ public final class SurvivorService extends CommandBase {
             if (owner != null) remove(owner, bot);
             else bot.cancelPlanning();
         }
-        bots.clear();
+        bots.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player instanceof EntityPlayerMP player && player.connection != null) {
@@ -131,14 +153,22 @@ public final class SurvivorService extends CommandBase {
     }
     @SubscribeEvent public void onTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        long start=System.nanoTime();
+        if(lastTickNanos!=0) meanTickMs=meanTickMs*.95 + Math.min(1000,(start-lastTickNanos)/1_000_000.0)*.05;
+        lastTickNanos=start;
+        if(++ticks%20==0) {
+            if(meanAiMs>4 || meanTickMs>65) stressed=true;
+            else if(meanAiMs<2 && meanTickMs<55) stressed=false;
+        }
         for (SurvivorPlayer bot : new ArrayList<>(bots.values())) {
             MinecraftServer server = bot.getServer();
             if (server == null) continue;
             if (!bot.isEntityAlive() || server.getPlayerList().getPlayerByUsername(bot.getName()) != null) { remove(server, bot); continue; }
-            try { bot.drive(); } catch (RuntimeException | LinkageError e) {
+            try { bot.setStressed(stressed || (System.nanoTime()-start)>4_000_000L); bot.drive(); } catch (RuntimeException | LinkageError e) {
                 AutomataMod.LOGGER.error("Manhunt AI disabled after error: " + bot.getName(), e);
                 remove(server, bot);
             }
         }
+        meanAiMs=meanAiMs*.95+(System.nanoTime()-start)/1_000_000.0*.05;
     }
 }
