@@ -51,7 +51,33 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private int nextBuild, buildDeadline;
     private final java.util.ArrayDeque<BlockPos> fortification = new java.util.ArrayDeque<>();
     private int nextChat,victories,nextVictoryChat;
-    private EntityLivingBase target;
+    private EntityLivingBase target, squadTarget;
+    private int squadUntil,nextCombatAssessment;
+    private SurvivorCombatPolicy.Order combatOrder=SurvivorCombatPolicy.Order.WITHDRAW;
+    EntityLivingBase visibleEnemy(){return target!=null&&target.isEntityAlive()&&target.world==world&&ManhuntCompat.isHostile(target)&&canEntityBeSeen(target)?target:null;}
+    double combatStrength(){
+        if(!isEntityAlive()||dangerousHere()||getHealth()<getMaxHealth()*.5f||getFoodStats().getFoodLevel()<6)return 0;
+        return SurvivorCombatPolicy.strength(getHealth(),getTotalArmorValue(),hasLoadedGun(),bestMelee()>=0);
+    }
+    boolean fightingSame(EntityLivingBase e){return target==e&&canEntityBeSeen(e)&&combatOrder!=SurvivorCombatPolicy.Order.WITHDRAW;}
+    void squadContact(EntityLivingBase enemy,BlockPos observed){
+        if(!isEntityAlive()||enemy==null||enemy.world!=world||!enemy.isEntityAlive()||!ManhuntCompat.isHostile(enemy)||getDistanceSqToCenter(observed)>32*32)return;
+        if(canEntityBeSeen(enemy)){
+            squadTarget=enemy;squadUntil=age+100;nextCombatAssessment=0;
+            if(target==null){alert(enemy,observed);}
+        }else{alert(null,observed);}
+    }
+    String combatOrderName(){return combatOrder.name();}
+    private void assessCombat(boolean visible){
+        if(target==null){combatOrder=SurvivorCombatPolicy.Order.WITHDRAW;return;}
+        if(age<nextCombatAssessment)return;
+        nextCombatAssessment=age+(stressed?12:4);
+        double own=combatStrength(),allied=SurvivorService.INSTANCE.supportStrength(this,target);
+        double enemy=Math.max(1,target.getHealth())*(1+Math.min(20,target.getTotalArmorValue())*.035);
+        boolean vagrant=target instanceof net.minecraft.entity.player.EntityPlayer;
+        if(vagrant)enemy*=1.15;
+        combatOrder=SurvivorCombatPolicy.decide(getHealth(),getMaxHealth(),own,allied,enemy,Math.max(1,closeEnemies),hasLoadedGun(),dangerousHere(),vagrant);
+    }
     private SurvivorPlayer helpCaller;
     private boolean helpCombat;
     boolean hasLoadedGun(){return gunSlot>=0||bowSlot>=0;}
@@ -64,13 +90,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     SurvivorHelpPolicy.Need helpNeed(){
         if(target!=null&&(getHealth()<getMaxHealth()*.45f||closeEnemies>=3))return SurvivorHelpPolicy.Need.EMERGENCY;
-        if(target!=null&&(closeEnemies>=2||target.getHealth()>getMaxHealth()*2))return SurvivorHelpPolicy.Need.COMBAT;
+        if(target!=null&&(closeEnemies>=2||target.getHealth()>getMaxHealth()*2||combatOrder!=SurvivorCombatPolicy.Order.ENGAGE))return SurvivorHelpPolicy.Need.COMBAT;
         if(findFood()<0||getFoodStats().getFoodLevel()<8)return SurvivorHelpPolicy.Need.FOOD;
         if(constructionStock()<4&&missingWallBlocks()>0)return SurvivorHelpPolicy.Need.MATERIALS;
         return null;
     }
     int continuationPriority(SurvivorPlayer caller,boolean combat){
-        if(combat&&caller==helpCaller&&target!=null&&target==caller.target&&getHealth()>=getMaxHealth()*.65f&&!dangerousHere())return 10;
+        if(combat&&caller==helpCaller&&target!=null&&target==caller.target&&getHealth()>=getMaxHealth()*.65f&&!dangerousHere()&&combatOrder!=SurvivorCombatPolicy.Order.WITHDRAW)return 10;
         return helpPriority();
     }
     boolean canHelpSafely(boolean combat){return !stressed&&!dangerousHere()&&getHealth()>=getMaxHealth()*.65f&&getFoodStats().getFoodLevel()>=8&&(combat||target==null);}
@@ -203,9 +229,11 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(getDistanceSq(e)<=100)closeEnemies++;
             double value=getDistanceSq(e)*SrpTacticalClassifier.classify(e).threatWeightMultiplier();
             if(e==target) value*=.75;
+            if(e instanceof net.minecraft.entity.player.EntityPlayer)value*=.6;
+            if(e==squadTarget&&age<squadUntil)value*=.45;
             if(value<score) {best=e;score=value;}
         }
-        if(best!=null) {target=best;if(age>=explosionUntil){lastThreat=best.getPosition();lastThreatTick=age;}alertUntil=age+100;}
+        if(best!=null) {boolean changed=target!=best;target=best;if(age>=explosionUntil){lastThreat=best.getPosition();lastThreatTick=age;}alertUntil=age+100;if(changed){nextCombatAssessment=0;SurvivorService.INSTANCE.observedThreat(this,best);}}
     }
     private void scanHazards() {
         int checked=0;
@@ -422,8 +450,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             target!=null,visible,hasLoadedGun(),findMelee()>=0,target==null?Double.MAX_VALUE:getDistanceSq(target),
             profile.preferredMinRangeSq(),profile.fleeWhenSwelling(),dangerousHere(),buildGoal!=null,loot!=null));
         if(target==null&&action==SurvivorBrain.Action.PATROL)planDefenseRepair();
+        assessCombat(visible);
         if(target!=null&&action!=SurvivorBrain.Action.EVADE){
-            if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),hasLoadedGun(),getHeldItemOffhand().getItem()==Items.SHIELD)) action=SurvivorBrain.Action.RETREAT;
+            if(combatOrder==SurvivorCombatPolicy.Order.WITHDRAW||combatOrder==SurvivorCombatPolicy.Order.COVER&&(!visible||getDistanceSq(target)<100||getDistanceSq(target)>576))action=SurvivorBrain.Action.RETREAT;
+            else if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),hasLoadedGun(),getHeldItemOffhand().getItem()==Items.SHIELD)&&combatOrder!=SurvivorCombatPolicy.Order.ENGAGE) action=SurvivorBrain.Action.RETREAT;
             else if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
         }
         if(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&target!=null&&getDistanceSq(target)<9)action=findMelee()>=0&&target.getHealth()<=getMaxHealth()*2?SurvivorBrain.Action.MELEE:SurvivorBrain.Action.RETREAT;
