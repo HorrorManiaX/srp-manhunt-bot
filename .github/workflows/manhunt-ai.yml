@@ -23,6 +23,11 @@ jobs:
         with:
           java-version: '25'
           distribution: temurin
+      - name: Tactical decision regression tests
+        run: |
+          mkdir -p /tmp/manhunt-ai-test
+          javac -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorBrain.java manhunt-ai/tests/BrainSelfTest.java
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.BrainSelfTest
       - name: Build and test
         working-directory: automata-upstream
         run: bash gradlew build --no-daemon
