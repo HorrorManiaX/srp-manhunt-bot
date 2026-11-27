@@ -52,7 +52,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private final java.util.ArrayDeque<BlockPos> fortification = new java.util.ArrayDeque<>();
     private int nextChat,victories,nextVictoryChat;
     private EntityLivingBase target, squadTarget;
-    private int squadUntil,nextCombatAssessment;
+    private int squadUntil,nextCombatAssessment,withdrawUntil;
+    private float lastEnemyHealth=20,lastEnemyArmor;
     private SurvivorCombatPolicy.Order combatOrder=SurvivorCombatPolicy.Order.WITHDRAW;
     EntityLivingBase visibleEnemy(){return target!=null&&target.isEntityAlive()&&target.world==world&&ManhuntCompat.isHostile(target)&&canEntityBeSeen(target)?target:null;}
     double combatStrength(){
@@ -73,10 +74,14 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(age<nextCombatAssessment)return;
         nextCombatAssessment=age+(stressed?12:4);
         double own=combatStrength(),allied=SurvivorService.INSTANCE.supportStrength(this,target);
-        double enemy=Math.max(1,target.getHealth())*(1+Math.min(20,target.getTotalArmorValue())*.035);
+        if(visible){lastEnemyHealth=target.getHealth();lastEnemyArmor=target.getTotalArmorValue();}
+        double enemy=Math.max(1,lastEnemyHealth)*(1+Math.min(20,lastEnemyArmor)*.035);
         boolean vagrant=target instanceof net.minecraft.entity.player.EntityPlayer;
         if(vagrant)enemy*=1.15;
-        combatOrder=SurvivorCombatPolicy.decide(getHealth(),getMaxHealth(),own,allied,enemy,Math.max(1,closeEnemies),hasLoadedGun(),dangerousHere(),vagrant);
+        var next=SurvivorCombatPolicy.decide(getHealth(),getMaxHealth(),own,allied,enemy,Math.max(1,closeEnemies),hasLoadedGun(),dangerousHere(),vagrant);
+        if(next==SurvivorCombatPolicy.Order.WITHDRAW&&combatOrder!=next)withdrawUntil=age+40;
+        if(age<withdrawUntil&&next==SurvivorCombatPolicy.Order.ENGAGE)next=hasLoadedGun()?SurvivorCombatPolicy.Order.COVER:SurvivorCombatPolicy.Order.WITHDRAW;
+        combatOrder=next;
     }
     private SurvivorPlayer helpCaller;
     private boolean helpCombat;
@@ -187,7 +192,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         lastThreat=location; lastThreatTick=age;
         if(source!=null && age>=alertUntil){var memory=SurvivorMemory.get((WorldServer)world);memory.note(getUniqueID(),"danger",location,world.getTotalWorldTime());memory.count(getUniqueID(),"encounters");}
         alertUntil=age+100; nextScan=age;
-        if (source != null && source.world==world && source.isEntityAlive() && canEntityBeSeen(source)) target=source;
+        if (source != null && source.world==world && source.isEntityAlive() && canEntityBeSeen(source)){
+            if(target!=source){lastEnemyHealth=source.getHealth();lastEnemyArmor=source.getTotalArmorValue();}
+            target=source;nextCombatAssessment=0;
+        }
     }
     void explosionAlert(BlockPos pos) {
         alert(null,pos); explosionUntil=age+30; nextEvade=age; escapeGoal=null;
@@ -204,14 +212,20 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private BlockPos chooseEscape() {
         BlockPos here=getPosition(), threat=age<explosionUntil ? lastThreat : target!=null && canEntityBeSeen(target) ? target.getPosition() : lastThreat;
         BlockPos best=null; double bestScore=-Double.MAX_VALUE;
-        for(int i=0;i<16;i++) {
+        for(int i=0;i<24;i++) {
             double a=2*Math.PI*(i%8)/8;
-            int radius=i<8?4:8;
+            int radius=i<8?4:i<16?8:12;
             BlockPos base=here.add(Math.round(Math.cos(a)*radius),0,Math.round(Math.sin(a)*radius));
             for(int dy=-1;dy<=1;dy++) {
                 BlockPos p=base.up(dy);
                 if(!standable(p)) continue;
-                double score=(threat==null?0:p.distanceSq(threat))-.12*p.distanceSq(home);
+                double score=(threat==null?0:p.distanceSq(threat))-.35*p.distanceSq(home);
+                if(threat!=null){
+                    var hit=world.rayTraceBlocks(new net.minecraft.util.math.Vec3d(threat).add(.5,1.4,.5),new net.minecraft.util.math.Vec3d(p).add(.5,1.4,.5),false,true,false);
+                    if(hit!=null)score+=28;
+                }
+                if(world.isBlockLoaded(p.up(2))&&world.getBlockState(p.up(2)).isFullCube())score+=12;
+                if(!world.getWorldBorder().contains(p))continue;
                 if(score>bestScore) {best=p;bestScore=score;}
             }
         }
@@ -233,7 +247,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(e==squadTarget&&age<squadUntil)value*=.45;
             if(value<score) {best=e;score=value;}
         }
-        if(best!=null) {boolean changed=target!=best;target=best;if(age>=explosionUntil){lastThreat=best.getPosition();lastThreatTick=age;}alertUntil=age+100;if(changed){nextCombatAssessment=0;SurvivorService.INSTANCE.observedThreat(this,best);}}
+        if(best!=null) {boolean changed=target!=best;target=best;if(age>=explosionUntil){lastThreat=best.getPosition();lastThreatTick=age;}alertUntil=age+100;if(changed){lastEnemyHealth=best.getHealth();lastEnemyArmor=best.getTotalArmorValue();nextCombatAssessment=0;SurvivorService.INSTANCE.observedThreat(this,best);}}
     }
     private void scanHazards() {
         int checked=0;
@@ -452,10 +466,12 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(target==null&&action==SurvivorBrain.Action.PATROL)planDefenseRepair();
         assessCombat(visible);
         if(target!=null&&action!=SurvivorBrain.Action.EVADE){
+            if(getPosition().distanceSq(home)>32*32&&!visible)action=SurvivorBrain.Action.RETREAT;
             if(combatOrder==SurvivorCombatPolicy.Order.WITHDRAW||combatOrder==SurvivorCombatPolicy.Order.COVER&&(!visible||getDistanceSq(target)<100||getDistanceSq(target)>576))action=SurvivorBrain.Action.RETREAT;
             else if(SurvivorDefense.overwhelmed(getHealth(),getMaxHealth(),closeEnemies,target.getHealth(),hasLoadedGun(),getHeldItemOffhand().getItem()==Items.SHIELD)&&combatOrder!=SurvivorCombatPolicy.Order.ENGAGE) action=SurvivorBrain.Action.RETREAT;
             else if(SurvivorDefense.recovery(getHealth(),getMaxHealth(),getFoodStats().getFoodLevel(),foodSlot>=0,visible,getDistanceSq(target))) action=SurvivorBrain.Action.EAT;
         }
+        if(action==SurvivorBrain.Action.APPROACH&&target!=null&&getPosition().distanceSq(home)>32*32)action=SurvivorBrain.Action.RETREAT;
         if(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&target!=null&&getDistanceSq(target)<9)action=findMelee()>=0&&target.getHealth()<=getMaxHealth()*2?SurvivorBrain.Action.MELEE:SurvivorBrain.Action.RETREAT;
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
         activity=retreat?"retreat":action==SurvivorBrain.Action.EAT?"eat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
