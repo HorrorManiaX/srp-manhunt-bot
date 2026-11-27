@@ -69,6 +69,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     boolean autonomousEnabled(){return work.isEnabled();}
     String technologyGoalId(){return work.goalId();}
     public String activity() { return activity+"/"+work.status()+"/furnace="+furnace.status(); }
+    boolean hasFurnaceStation(){return furnace.validStation();}
+    boolean furnaceBusy(){return furnace.active();}
+    void industry(boolean enabled){work.industry(enabled);invalidateRoute();}
+    boolean industryEnabled(){return work.industryEnabled();}
     boolean smelt(net.minecraft.util.ResourceLocation id){return furnace.request(id);}
     boolean furnaceStation(){return buildGoal==null&&furnace.queueStation();}
     void autonomous(boolean enable){work.enabled(enable);invalidateRoute();}
@@ -158,7 +162,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(++checked>48) break;
             if(item.isDead || item.getItem().isEmpty() || item.cannotPickup() || item.getOwner()!=null) continue;
             ItemStack stack=item.getItem();
-            if(!(stack.getItem() instanceof ItemFood || stack.getItem() instanceof net.minecraft.item.ItemSword || stack.getItem() instanceof ItemBlock)) continue;
+            if(!(stack.getItem() instanceof ItemFood || stack.getItem() instanceof net.minecraft.item.ItemSword || stack.getItem() instanceof ItemBlock || stack.getItem()==Items.COAL || stack.getItem()==Items.IRON_INGOT || stack.getItem() instanceof net.minecraft.item.ItemTool || stack.getItem() instanceof net.minecraft.item.ItemArmor)) continue;
             double d=getDistanceSq(item);
             if(d<distance && canEntityBeSeen(item)) {loot=item;distance=d;}
         }
