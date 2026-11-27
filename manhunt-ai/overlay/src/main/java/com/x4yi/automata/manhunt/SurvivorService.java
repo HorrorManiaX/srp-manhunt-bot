@@ -33,12 +33,26 @@ public final class SurvivorService extends CommandBase {
     private double meanTickMs=50;
     private int ticks;
     private boolean stressed;
+    private final Map<String,Long> squadMessages=new LinkedHashMap<>();
+    private void squadAlert(SurvivorPlayer victim,net.minecraft.entity.EntityLivingBase threat){
+        long now=victim.world.getTotalWorldTime();
+        String key=victim.world.provider.getDimension()+":"+victim.getUniqueID();
+        Long last=squadMessages.get(key);
+        if(last!=null&&now-last<200)return;
+        if(squadMessages.size()>=64)squadMessages.clear();
+        squadMessages.put(key,now);
+        for(EntityPlayerMP human:victim.getServer().getPlayerList().getPlayers()){
+            if(human.world!=victim.world||human.getDistanceSq(victim)>32*32||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
+            human.sendMessage(new TextComponentString("[AI/отряд] "+victim.getName()+": замечен "+threat.getName()+", держитесь настороже."));
+        }
+    }
     @SubscribeEvent(receiveCanceled=false)
     public void onAttacked(net.minecraftforge.event.entity.living.LivingAttackEvent event) {
         if(event.getEntityLiving().world.isRemote || !(event.getEntityLiving() instanceof SurvivorPlayer victim)) return;
         net.minecraft.entity.Entity attacker=event.getSource().getTrueSource();
         if(attacker instanceof net.minecraft.entity.EntityLivingBase living && com.x4yi.automata.compat.ManhuntCompat.isHostile(living)) {
             victim.alert(living,living.getPosition());
+            squadAlert(victim,living);
             for(SurvivorPlayer ally:bots.values()) if(ally!=victim && ally.world==victim.world && ally.getDistanceSq(victim)<=144 && ally.canEntityBeSeen(victim)) ally.alert(null,victim.getPosition());
         } else victim.alert(null,victim.getPosition());
     }
@@ -50,9 +64,16 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | remove <name> | clear | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | remove <name> | clear | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        if(args.length==3 && args[0].equals("auto")){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null)throw new CommandException("AI survivor not found");
+            if(!args[2].equals("on")&&!args[2].equals("off"))throw new CommandException("Expected on/off");
+            bot.autonomous(args[2].equals("on"));
+            sender.sendMessage(new TextComponentString(bot.getName()+": autonomous work "+args[2]+" (local protected area only)"));return;
+        }
         if (args.length >= 2 && (args[0].equals("craft") || args[0].equals("place") || args[0].equals("supply") || args[0].equals("fortify"))) {
             SurvivorPlayer bot = bots.get(key(args[1]));
             if (bot == null) throw new CommandException("AI survivor not found");
@@ -133,7 +154,7 @@ public final class SurvivorService extends CommandBase {
             if (owner != null) remove(owner, bot);
             else bot.cancelPlanning();
         }
-        bots.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
+        bots.clear(); squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player instanceof EntityPlayerMP player && player.connection != null) {
@@ -147,7 +168,11 @@ public final class SurvivorService extends CommandBase {
             String prefix="@"+bot.getName();
             if(!msg.regionMatches(true,0,prefix,0,prefix.length()) || (msg.length()>prefix.length() && !Character.isWhitespace(msg.charAt(prefix.length())))) continue;
             String reply=bot.reply(msg.substring(prefix.length()));
-            if(reply!=null) event.getPlayer().sendMessage(new TextComponentString("[AI] " + bot.getName() + ": " + reply));
+            if(reply!=null) {
+                for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
+                    player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
+                if(event.getPlayer().getDistanceSq(bot)>32*32)event.getPlayer().sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
+            }
             break;
         }
     }
