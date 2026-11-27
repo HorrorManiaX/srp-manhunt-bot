@@ -14,7 +14,7 @@ changes=[
 ('event.registerServerCommand(new CommandAutomata());',
  'event.registerServerCommand(new CommandAutomata());\n        event.registerServerCommand(com.x4yi.automata.manhunt.SurvivorService.INSTANCE);\n        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(com.x4yi.automata.manhunt.SurvivorService.INSTANCE);'),
 ('PathfindingExecutor.shutdown();',
- 'com.x4yi.automata.manhunt.SurvivorService.INSTANCE.clear(net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance());\n        net.minecraftforge.common.MinecraftForge.EVENT_BUS.unregister(com.x4yi.automata.manhunt.SurvivorService.INSTANCE);\n        PathfindingExecutor.shutdown();')
+ 'com.x4yi.automata.manhunt.SurvivorService.INSTANCE.shutdown(net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance());\n        net.minecraftforge.common.MinecraftForge.EVENT_BUS.unregister(com.x4yi.automata.manhunt.SurvivorService.INSTANCE);\n        PathfindingExecutor.shutdown();')
 ]
 for before, after in changes:
     if s.count(before)!=1:
