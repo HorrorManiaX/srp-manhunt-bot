@@ -402,6 +402,7 @@ public final class SurvivorService extends CommandBase {
         MinecraftServer server=net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
         if(server!=null&&ticks%20==0)try{population.tick(server,this,stressed||(System.nanoTime()-start)>4_000_000L);}catch(RuntimeException | LinkageError ex){population.failure(ex);}
         if(!stressed&&ticks%40==0&&(System.nanoTime()-start)<3_000_000L)try{assistance.tick(new ArrayList<>(bots.values()),ticks);}catch(RuntimeException|LinkageError ex){assistance.clear();for(SurvivorPlayer bot:bots.values())bot.clearHelp();AutomataMod.LOGGER.warn("AI help coordinator reset",ex);}
+        if(!stressed&&ticks%200==0&&(System.nanoTime()-start)<2_000_000L)SurvivorSeason.pool(new ArrayList<>(bots.values()));
         if(!stressed&&ticks%100==0&&(System.nanoTime()-start)<2_000_000L)SurvivorSquad.coordinate(new ArrayList<>(bots.values()),ticks/100);
         meanAiMs=meanAiMs*.95+(System.nanoTime()-start)/1_000_000.0*.05;
     }
