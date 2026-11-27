@@ -22,6 +22,19 @@ public final class PopulationSelfTest {
         require(!SurvivorDefense.recovery(12,20,18,true,true,25),"don't eat close to threat");
         require(SurvivorDefense.recovery(12,20,18,true,true,225),"heal at distance");
         require(SurvivorDefense.neededBlocks(30,12)==18&&SurvivorDefense.neededBlocks(5,20)==0,"materials");
+        var rng=new java.util.Random(9001);
+        for(int i=0;i<10000;i++){int delay=SurvivorPopulationPolicy.joinDelay(rng);require(delay>=1200&&delay<=12000,"join interval");}
+        for(var need:SurvivorHelpPolicy.Need.values()){
+            require(SurvivorHelpPolicy.decide(need,need.priority,true,true)==SurvivorHelpPolicy.Decision.BUSY,"equal priority");
+            require(SurvivorHelpPolicy.decide(need,need.priority-1,true,true)==SurvivorHelpPolicy.Decision.ACCEPT,"lower priority");
+            require(SurvivorHelpPolicy.decide(need,0,false,true)==SurvivorHelpPolicy.Decision.NO_SUPPLIES,"capability");
+            require(SurvivorHelpPolicy.decide(need,0,true,false)==SurvivorHelpPolicy.Decision.UNSAFE,"safety");
+        }
+        var shelter=SurvivorBlueprint.shelter();
+        require(shelter.size()==55&&new java.util.HashSet<>(shelter).size()==55,"roofed shelter");
+        require(!shelter.contains(new SurvivorBlueprint.Offset(0,0,-2)),"entrance");
+        require(SurvivorDefense.overwhelmed(20,20,1,100,false,true),"avoid oversized enemies at full health");
+        System.out.println("10000 recruitment intervals, 16 help decisions and shelter checks passed");
         System.out.println(cases+" population scenarios, 100 backoff cases and 8 defense checks passed");
     }
 }
