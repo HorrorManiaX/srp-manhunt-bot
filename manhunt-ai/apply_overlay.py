@@ -108,10 +108,10 @@ for f in java_root.rglob('*.java'):
     if f.name=='WorldCacheManager.java':
         continue
     old=f.read_text(encoding='utf-8')
-    new=re.sub(r'(?m)^\\s*@(?:Mod\\.)?EventBusSubscriber\\([^\\n]*\\)\\s*\\n','\\n',old)
-    new=re.sub(r'(?m)^\\s*@WailaPlugin\\s*\\n','\\n',new)
-    new=re.sub(r'(?m)^\\s*@JEIPlugin\\s*\\n','\\n',new)
-    new=re.sub(r'(?m)^\\s*@Config\\(modid = AutomataMod.MOD_ID, name = AutomataMod.MOD_ID\\)\\s*\\n','\\n',new)
+    new=re.sub(r'(?m)^\s*@(?:Mod\.)?EventBusSubscriber\([^\n]*\)\s*\n','\n',old)
+    new=re.sub(r'(?m)^\s*@WailaPlugin\s*\n','\n',new)
+    new=re.sub(r'(?m)^\s*@JEIPlugin\s*\n','\n',new)
+    new=re.sub(r'(?m)^\s*@Config\(modid = AutomataMod.MOD_ID, name = AutomataMod.MOD_ID\)\s*\n','\n',new)
     if old!=new:f.write_text(new,encoding='utf-8')
 # Forge automatically discovers JSON recipes even without the original registry handlers.
 # These upstream recipes refer to unregistered Automata items and must not enter the server registry.
