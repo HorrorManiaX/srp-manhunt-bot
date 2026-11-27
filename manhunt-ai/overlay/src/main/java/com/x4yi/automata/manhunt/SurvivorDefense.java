@@ -7,10 +7,10 @@ public final class SurvivorDefense {
         if(maxHp<=0||hp<=maxHp*.35f)return true;
         if(closeEnemies>=3&&!ranged)return true;
         if(closeEnemies>=2&&hp<maxHp*.65f&&!shield)return true;
-        return !ranged&&targetHealth>maxHp*3&&hp<maxHp*.85f;
+        return !ranged&&targetHealth>maxHp*3;
     }
     public static boolean recovery(float health,float maxHealth,int hunger,boolean food,boolean visible,double distanceSq){
         return food&&hunger<20&&health<maxHealth*.8f&&(!visible||distanceSq>=144);
     }
-    public static int neededBlocks(int missing,int stock){return Math.max(0,Math.min(30,missing)-Math.max(0,stock));}
+    public static int neededBlocks(int missing,int stock){return Math.max(0,Math.min(55,missing)-Math.max(0,stock));}
 }
