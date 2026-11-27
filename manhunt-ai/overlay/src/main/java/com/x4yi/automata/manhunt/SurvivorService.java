@@ -295,8 +295,7 @@ public final class SurvivorService extends CommandBase {
         }
         if (args.length != 2 || !args[0].equals("spawn") || !args[1].matches("[A-Za-z0-9_]{1,13}")) throw new CommandException(getUsage(sender));
         if (bots.size() >= MAX) throw new CommandException("AI survivor limit reached");
-        String name = args[1];
-        if (args[1].regionMatches(true, 0, "AI_", 0, 3)) throw new CommandException("Use a name without the AI_ prefix");
+        String name = markedName(args[1]);
         if (bots.containsKey(key(name)) || server.getPlayerList().getPlayerByUsername(name) != null) throw new CommandException("Name already in use");
         if (!(sender.getEntityWorld() instanceof WorldServer world)) throw new CommandException("Server world required");
         BlockPos pos = sender.getPosition();
@@ -327,6 +326,7 @@ public final class SurvivorService extends CommandBase {
     boolean homeTooClose(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.homePosition().distanceSq(p)<36)return true;return false;}
     boolean occupied(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.getDistanceSqToCenter(p)<16)return true;return false;}
     boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos,boolean siegeKit)throws CommandException{
+        name=markedName(name);
         String k=key(name);if(bots.size()>=MAX||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||!standable(world,pos))return false;
         UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),pos);
@@ -380,6 +380,32 @@ public final class SurvivorService extends CommandBase {
         if(server!=null)updateAgentStatus(server);
         statusOriginal=null;statusPublished=null;lastStatusNames="";
         if(server!=null)for(WorldServer world:server.worlds)if(world!=null)world.getPerWorldStorage().saveAllData();
+    }
+    private static String markedName(String name){
+        return name.regionMatches(true,0,"AI_",0,3)?name:"AI_"+name;
+    }
+    @SubscribeEvent
+    public void onRconList(net.minecraftforge.event.CommandEvent event){
+        if(!(event.getSender() instanceof net.minecraft.network.rcon.RConConsoleSource)
+            ||!"list".equals(event.getCommand().getName())||event.getParameters().length!=0)return;
+        MinecraftServer server=event.getSender().getServer();
+        if(server==null||bots.isEmpty())return;
+        java.util.List<String> names=new ArrayList<>();
+        java.util.Set<String> seen=new java.util.HashSet<>();
+        for(EntityPlayerMP p:server.getPlayerList().getPlayers()){
+            names.add(p.getName());seen.add(p.getName().toLowerCase(java.util.Locale.ROOT));
+        }
+        int humanCount=names.size();
+        for(SurvivorPlayer bot:bots.values()){
+            if(!bot.isEntityAlive())continue;
+            String label=markedName(bot.getName());
+            if(!seen.add(label.toLowerCase(java.util.Locale.ROOT)))label+=" [ИИ]";
+            names.add(label);
+        }
+        if(names.size()==humanCount)return;
+        int capacity=Math.max(names.size(),server.getPlayerList().getMaxPlayers());
+        event.setCanceled(true);
+        event.getSender().sendMessage(new TextComponentString("There are "+names.size()+"/"+capacity+" players online: "+String.join(", ",names)));
     }
     private static String key(String input) {
         return (input.regionMatches(true, 0, "AI_", 0, 3) ? input : "AI_" + input).toLowerCase(java.util.Locale.ROOT);
