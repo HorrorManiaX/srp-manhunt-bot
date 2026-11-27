@@ -28,6 +28,8 @@ import net.minecraft.world.WorldServer;
 /** Experimental server-side player body; no remote account or real-player login. */
 public final class SurvivorPlayer extends EntityPlayerMP {
     private final BlockPos home;
+    private final SurvivorWork work;
+    private int reloadUntil, nextReload;
     private AtomicBoolean cancelled = new AtomicBoolean();
     private CompletableFuture<PathResult> pending;
     private PathResult path = PathResult.EMPTY;
@@ -50,6 +52,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     public SurvivorPlayer(MinecraftServer server, WorldServer world, GameProfile profile, BlockPos pos) {
         super(server, world, profile, new PlayerInteractionManager(world));
         this.home = pos;
+        this.work=new SurvivorWork(this,pos);
         this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
             @Override public void sendPacket(Packet<?> packet) { /* No remote client. */ }
         };
@@ -60,8 +63,11 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         inventory.setInventorySlotContents(0, new ItemStack(Items.IRON_SWORD));
         inventory.setInventorySlotContents(1, new ItemStack(Items.BREAD, 8));
     }
-    public String activity() { return activity; }
-    public void cancelPlanning() { invalidateRoute(); }
+    public String activity() { return activity+"/"+work.status(); }
+    void autonomous(boolean enable){work.enabled(enable);invalidateRoute();}
+    void faceBlock(BlockPos p){lookAt(p.getX()+.5,p.getY()+.5,p.getZ()+.5);}
+    int equipInventorySlot(int i){if(i<0||i>=36)return -1;if(i>=9){int h=inventory.currentItem;ItemStack old=inventory.getStackInSlot(h);inventory.setInventorySlotContents(h,inventory.getStackInSlot(i));inventory.setInventorySlotContents(i,old);i=h;inventory.markDirty();}inventory.currentItem=i;return i;}
+    public void cancelPlanning() { work.clear();invalidateRoute(); }
     private void invalidateRoute() {
         cancelled.set(true);
         cancelled = new AtomicBoolean();
@@ -72,6 +78,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if (source != null && (source == this || !ManhuntCompat.isHostile(source))) return;
         if (location == null || getDistanceSqToCenter(location) > 24*24) return;
         lastThreat=location; lastThreatTick=age;
+        if(source!=null && age>=alertUntil){var memory=SurvivorMemory.get((WorldServer)world);memory.note(getUniqueID(),"danger",location,world.getTotalWorldTime());memory.count(getUniqueID(),"encounters");}
         alertUntil=age+100; nextScan=age;
         if (source != null && source.world==world && source.isEntityAlive() && canEntityBeSeen(source)) target=source;
     }
@@ -149,7 +156,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     public boolean requestBuild(BlockPos pos) { return requestBuild(pos, null); }
     public boolean requestBuild(BlockPos pos, net.minecraft.util.ResourceLocation item) {
-        if (!world.isBlockLoaded(pos) || pos.distanceSq(home) > 12*12 || !world.isAirBlock(pos) || getServer().isBlockProtected((WorldServer)world, pos, this)) return false;
+        if (!world.isBlockLoaded(pos) || pos.distanceSq(home) > 12*12 || !world.isAirBlock(pos) || !SurvivorPermissions.allowed(this,pos,true)) return false;
         buildGoal = pos; buildItem = item; buildDeadline = age + 400; nextPlan = 0; return true;
     }
     public void fortify() {
@@ -169,6 +176,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         String msg = message.toLowerCase(java.util.Locale.ROOT);
         if (msg.contains("привет") || msg.contains("здравств")) return "Привет! Я ИИ-выживший, сейчас " + russianActivity() + ".";
         if (msg.contains("здоров") || msg.contains("хп")) return "Здоровье: " + Math.round(getHealth()) + "/" + Math.round(getMaxHealth()) + ".";
+        if (msg.contains("работ") || msg.contains("план") || msg.contains("роль")) return "Моя задача: " + work.status() + ".";
         if (msg.contains("патрон") || msg.contains("оруж")) return gunSlot >= 0 ? "Есть заряженное оружие." : "Заряженного оружия сейчас нет.";
         if (msg.contains("паразит") || msg.contains("вагрант")) return target == null ? "Видимых противников сейчас нет." : "Вижу противника: " + target.getName() + ".";
         return "Сейчас " + russianActivity() + ". Я ИИ, пока понимаю вопросы о здоровье, оружии и противниках.";
@@ -177,27 +185,27 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         return switch (activity) { case "combat" -> "в бою"; case "retreat" -> "отступаю"; case "build" -> "укрепляю позицию"; case "scavenge" -> "собираю ресурсы"; case "eat" -> "восстанавливаю силы"; default -> "патрулирую"; };
     }
     private int findFood() {
-        for (int i=0; i<9; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemFood && !inventory.getStackInSlot(i).isEmpty()) return i;
+        for (int i=0; i<36; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemFood && !inventory.getStackInSlot(i).isEmpty()) return i;
         return -1;
     }
     private int findMelee() {
-        for (int i=0; i<9; i++) if (inventory.getStackInSlot(i).getItem() instanceof net.minecraft.item.ItemSword) return i;
+        for (int i=0; i<36; i++) if (inventory.getStackInSlot(i).getItem() instanceof net.minecraft.item.ItemSword) return i;
         return -1;
     }
     private void placeRequestedBlock() {
         if (buildGoal == null || age < nextBuild || getDistanceSqToCenter(buildGoal) > 16) return;
         nextBuild = age + 20;
-        if (!world.isBlockLoaded(buildGoal) || !world.isAirBlock(buildGoal) || getServer().isBlockProtected((WorldServer)world, buildGoal, this)) { buildGoal = null; return; }
+        if (!world.isBlockLoaded(buildGoal) || !world.isAirBlock(buildGoal) || !SurvivorPermissions.allowed(this,buildGoal,true)) { buildGoal = null; return; }
         int slot = -1;
-        for (int i=0; i<9; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemBlock block && !inventory.getStackInSlot(i).isEmpty() && (buildItem != null ? buildItem.equals(block.getRegistryName()) : block.getBlock().getDefaultState().isFullCube() && !block.getBlock().hasTileEntity(block.getBlock().getDefaultState()))) { slot=i; break; }
+        for (int i=0; i<36; i++) if (inventory.getStackInSlot(i).getItem() instanceof ItemBlock block && !inventory.getStackInSlot(i).isEmpty() && (buildItem != null ? buildItem.equals(block.getRegistryName()) : block.getBlock().getDefaultState().isFullCube() && !block.getBlock().hasTileEntity(block.getBlock().getDefaultState()))) { slot=i; break; }
         if (slot < 0) { buildGoal=null; fortification.clear(); return; }
         for (EnumFacing side : EnumFacing.values()) {
             BlockPos support = buildGoal.offset(side.getOpposite());
-            if (!world.isBlockLoaded(support) || world.isAirBlock(support) || getServer().isBlockProtected((WorldServer)world, support, this)) continue;
+            if (!world.isBlockLoaded(support) || world.isAirBlock(support) || !SurvivorPermissions.allowed(this,support,true)) continue;
             net.minecraft.util.math.Vec3d hit = new net.minecraft.util.math.Vec3d(support).add(.5 + side.getXOffset()*.5, .5 + side.getYOffset()*.5, .5 + side.getZOffset()*.5);
             net.minecraft.util.math.RayTraceResult trace = world.rayTraceBlocks(getPositionEyes(1F), hit.add(-side.getXOffset()*.01, -side.getYOffset()*.01, -side.getZOffset()*.01), false, true, false);
             if (trace == null || !support.equals(trace.getBlockPos()) || trace.sideHit != side) continue;
-            inventory.currentItem=slot; lookAt(hit.x,hit.y,hit.z);
+            equipInventorySlot(slot); lookAt(hit.x,hit.y,hit.z);
             EnumActionResult result=interactionManager.processRightClickBlock(this, world, getHeldItemMainhand(), EnumHand.MAIN_HAND, support, side, (float)(hit.x-support.getX()), (float)(hit.y-support.getY()), (float)(hit.z-support.getZ()));
             if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); buildGoal=null; }
             return;
@@ -228,7 +236,15 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             profile.preferredMinRangeSq(),profile.fleeWhenSwelling(),dangerousHere(),buildGoal!=null,loot!=null));
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
         activity=retreat?"retreat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
-        if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;}
+        if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
+        if(action==SurvivorBrain.Action.PATROL && buildGoal==null)work.plan(stressed);
+        else work.interrupt();
+        if(action==SurvivorBrain.Action.PATROL && work.destination()!=null && !work.destination().equals(plannedGoal) && pending==null)nextPlan=0;
+        if(action==SurvivorBrain.Action.PATROL && gunSlot<0 && age>=nextReload && !stressed){
+            nextReload=age+100;
+            int reload=SurvivorWeapons.reload(this);
+            if(reload>0)reloadUntil=age+reload;
+        }
         if(retreat && (escapeGoal==null || age>=nextEvade || getDistanceSqToCenter(escapeGoal)<4)) {
             escapeGoal=chooseEscape();nextEvade=age+20;
             if(escapeGoal!=null && !escapeGoal.equals(plannedGoal)) invalidateRoute();
@@ -242,7 +258,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         if (age >= nextPlan && pending == null && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
             nextPlan=age+(stressed?60:retreat?15:30)+rand.nextInt(10);
-            BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?buildGoal:action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():patrolGoal();
+            BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?buildGoal:action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():work.destination()!=null?work.destination():patrolGoal();
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
@@ -253,13 +269,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         setSprinting(false);
         if (target != null && action==SurvivorBrain.Action.RANGED) {
             if (isHandActive()) stopActiveHand();
-            inventory.currentItem = gunSlot;
+            gunSlot=equipInventorySlot(gunSlot);
             lookAt(target.posX, target.posY + target.getEyeHeight() * .75, target.posZ);
-            if (age >= nextAttack) nextAttack = age + SurvivorWeapons.fire(this,target);
+            if (age >= nextAttack && age>=reloadUntil) nextAttack = age + SurvivorWeapons.fire(this,target);
         } else if (target != null && action==SurvivorBrain.Action.MELEE) {
             if (isHandActive()) stopActiveHand();
             int melee = findMelee();
-            if (melee >= 0) inventory.currentItem = melee;
+            if (melee >= 0) equipInventorySlot(melee);
             lookAt(target.posX, target.posY + target.getEyeHeight(), target.posZ);
             if (melee >= 0 && age >= nextAttack && getCooledAttackStrength(0) >= .90F) {
                 nextAttack = age + 12 + rand.nextInt(7);
@@ -268,12 +284,12 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             }
         } else { followPath(); if(retreat && moveForward>0 && getFoodStats().getFoodLevel()>6) setSprinting(true); }
         if (action==SurvivorBrain.Action.EAT && foodSlot >= 0 && inventory.getStackInSlot(foodSlot).getItem() instanceof ItemFood && !inventory.getStackInSlot(foodSlot).isEmpty()) {
-            inventory.currentItem = foodSlot; moveForward = 0;
+            foodSlot=equipInventorySlot(foodSlot); moveForward = 0;
             if (!isHandActive()) setActiveHand(EnumHand.MAIN_HAND);
         } else {
             if (isHandActive()) stopActiveHand();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
-            if (target == null && !retreat && buildGoal == null && !stressed && age % 200 == 37) SurvivorCrafting.autoBasic(this);
+            if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed)work.act();
         }
         onUpdateEntity();
     }
