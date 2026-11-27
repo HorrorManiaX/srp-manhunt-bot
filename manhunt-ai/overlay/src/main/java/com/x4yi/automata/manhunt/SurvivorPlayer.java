@@ -608,7 +608,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
-                        new PathfindingSettings(false,false,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L,true),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
+                        new PathfindingSettings(false,getFoodStats().getFoodLevel()>8,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L,true),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
             }
         }
         moveForward = 0; moveStrafing = 0;
@@ -760,6 +760,22 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(hit==null||routeGate.equals(hit.getBlockPos()))interactionManager.processRightClickBlock(this,world,getHeldItemMainhand(),EnumHand.MAIN_HAND,routeGate,hit==null?EnumFacing.UP:hit.sideHit,.5f,.5f,.5f);
         routeGate=null;
     }
+    private boolean shortGapJump(BlockPos p,double dx,double dz,double distance){
+        if(!standable(p)||distance>2.6||getFoodStats().getFoodLevel()<=8)return false;
+        if(onGround){
+            BlockPos here=getPosition();
+            int x=p.getX()-here.getX(),z=p.getZ()-here.getZ(),dy=p.getY()-here.getY();
+            if(Math.abs(x)+Math.abs(z)>2||x!=0&&z!=0||dy>1||dy< -1)return false;
+            if(!world.isBlockLoaded(here.up(2))||!CellClassifier.isPassable(world,here.up(2)))return false;
+            if(Math.abs(x)+Math.abs(z)==2){
+                BlockPos gap=here.add(Integer.signum(x),0,Integer.signum(z));
+                for(int y=-1;y<=2;y++)if(SurvivorTerrain.hazardous(world,gap.up(y)))return false;
+                if(!CellClassifier.isPassable(world,gap)||!CellClassifier.isPassable(world,gap.up())||!CellClassifier.isPassable(world,gap.up(2)))return false;
+            }
+            setSprinting(true);moveForward=1; jump();return true;
+        }
+        setSprinting(true);moveForward=distance<.45?0:.85f;return true;
+    }
     private void followPath() {
         while(step<path.length()){
             long packed=path.getStep(step);
@@ -775,6 +791,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             float desired=(float)Math.toDegrees(Math.atan2(dz,dx))-90;
             lookAt(p.getX()+.5,posY+getEyeHeight(),p.getZ()+.5);
             if(Math.abs(MathHelper.wrapDegrees(desired-rotationYaw))>25)return;
+            if(action==PathNodeAction.SPRINT_JUMP){if(!shortGapJump(p,dx,dz,distance)){markRouteFailure(packed);invalidateRoute();}return;}
             double probe=Math.min(.75,distance),ux=distance<.01?0:dx/distance,uz=distance<.01?0:dz/distance;
             BlockPos near=new BlockPos(posX+ux*probe,posY,posZ+uz*probe);
             if(action==PathNodeAction.WALK&&distance<1.5&&(world.getBlockState(p).getBlock()==net.minecraft.init.Blocks.LADDER||world.isBlockLoaded(getPosition())&&world.getBlockState(getPosition()).getBlock()==net.minecraft.init.Blocks.LADDER&&standable(p))){moveForward=.5f;return;}
