@@ -37,7 +37,7 @@ public final class SurvivorService extends CommandBase {
             SurvivorPlayer bot=bots.get(answer.botKey());
             if(bot==null||!bot.isEntityAlive()||bot.getEntityId()!=answer.entityId()||answer.text().isEmpty())continue;
             EntityPlayerMP player=bot.getServer().getPlayerList().getPlayerByUUID(answer.senderId());
-            if(player!=null&&player.world==bot.world){SurvivorTelemetry.event("chat",bot,answer.text());player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+answer.text()));}
+            if(player!=null&&player.world==bot.world){SurvivorTelemetry.event("chat",bot,answer.text());player.sendMessage(new TextComponentString(bot.getName()+": "+answer.text()));}
         }
     }
     private net.minecraft.util.text.ITextComponent statusOriginal,statusPublished;
@@ -81,7 +81,7 @@ public final class SurvivorService extends CommandBase {
         SurvivorTelemetry.event("chat",bot,line);
         for(EntityPlayerMP human:bot.getServer().getPlayerList().getPlayers())
             if(human.world==bot.world&&human.getDistanceSq(bot)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
-                human.sendMessage(new TextComponentString("[AI/отряд] "+bot.getName()+": "+line));
+                human.sendMessage(new TextComponentString(bot.getName()+": "+line));
     }
     void observedThreat(SurvivorPlayer observer,net.minecraft.entity.EntityLivingBase enemy){
         if(enemy==null||enemy.world!=observer.world||!enemy.isEntityAlive()||!com.x4yi.automata.compat.ManhuntCompat.isHostile(enemy)||!observer.canEntityBeSeen(enemy))return;
@@ -100,7 +100,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
         for(EntityPlayerMP human:observer.getServer().getPlayerList().getPlayers()){
             if(human.world!=observer.world||human.getDistanceSq(observer)>48*48||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
-            human.sendMessage(new TextComponentString("[AI/отряд] "+observer.getName()+": "+line));
+            human.sendMessage(new TextComponentString(observer.getName()+": "+line));
         }
     }
     @SubscribeEvent(receiveCanceled=false)
@@ -195,11 +195,12 @@ public final class SurvivorService extends CommandBase {
             SurvivorRoster roster=SurvivorRoster.get(world);
             var snapshot=roster.snapshot(k);
             if(snapshot==null)throw new CommandException("No snapshot in this dimension");
-            String name=snapshot.getString("name");
+            String savedName=snapshot.getString("name");
+            String name=plainName(savedName);
             if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||bots.size()>=MAX||bots.containsKey(k)||server.getPlayerList().getPlayerByUsername(name)!=null)throw new CommandException("AI identity or capacity conflict");
             BlockPos pos=SurvivorRoster.position(snapshot),home=SurvivorRoster.home(snapshot);
             if(!standable(world,pos))throw new CommandException("Saved position unavailable; load its chunk and clear the position first");
-            UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
+            UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+savedName).getBytes(StandardCharsets.UTF_8));
             SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
             bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);
             SurvivorRoster.restore(bot,snapshot);
@@ -295,7 +296,8 @@ public final class SurvivorService extends CommandBase {
         }
         if (args.length != 2 || !args[0].equals("spawn") || !args[1].matches("[A-Za-z0-9_]{1,13}")) throw new CommandException(getUsage(sender));
         if (bots.size() >= MAX) throw new CommandException("AI survivor limit reached");
-        String name = markedName(args[1]);
+        String name = plainName(args[1]);
+        if(name.isEmpty())throw new CommandException("Empty agent name");
         if (bots.containsKey(key(name)) || server.getPlayerList().getPlayerByUsername(name) != null) throw new CommandException("Name already in use");
         if (!(sender.getEntityWorld() instanceof WorldServer world)) throw new CommandException("Server world required");
         BlockPos pos = sender.getPosition();
@@ -326,7 +328,7 @@ public final class SurvivorService extends CommandBase {
     boolean homeTooClose(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.homePosition().distanceSq(p)<36)return true;return false;}
     boolean occupied(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.getDistanceSqToCenter(p)<16)return true;return false;}
     boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos,boolean siegeKit)throws CommandException{
-        name=markedName(name);
+        name=plainName(name);
         String k=key(name);if(bots.size()>=MAX||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||!standable(world,pos))return false;
         UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),pos);
@@ -340,9 +342,9 @@ public final class SurvivorService extends CommandBase {
     boolean autoResume(MinecraftServer server,WorldServer world,String k)throws CommandException{
         SurvivorRoster roster=SurvivorRoster.get(world);var n=roster.snapshot(k);
         if(n==null)return false;
-        String name=n.getString("name");BlockPos pos=SurvivorRoster.position(n),home=SurvivorRoster.home(n);
+        String savedName=n.getString("name"),name=plainName(savedName);BlockPos pos=SurvivorRoster.position(n),home=SurvivorRoster.home(n);
         if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos)||!world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(16),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty())return false;
-        UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+name).getBytes(StandardCharsets.UTF_8));
+        UUID uuid=UUID.nameUUIDFromBytes(("ManhuntAI:"+savedName).getBytes(StandardCharsets.UTF_8));
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
         bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);SurvivorRoster.restore(bot,n);
         roster.forget(k);
@@ -381,8 +383,8 @@ public final class SurvivorService extends CommandBase {
         statusOriginal=null;statusPublished=null;lastStatusNames="";
         if(server!=null)for(WorldServer world:server.worlds)if(world!=null)world.getPerWorldStorage().saveAllData();
     }
-    private static String markedName(String name){
-        return name.regionMatches(true,0,"AI_",0,3)?name:"AI_"+name;
+    private static String plainName(String name){
+        return name.regionMatches(true,0,"AI_",0,3)?name.substring(3):name;
     }
     @SubscribeEvent
     public void onRconList(net.minecraftforge.event.CommandEvent event){
@@ -398,8 +400,8 @@ public final class SurvivorService extends CommandBase {
         int humanCount=names.size();
         for(SurvivorPlayer bot:bots.values()){
             if(!bot.isEntityAlive())continue;
-            String label=markedName(bot.getName());
-            if(!seen.add(label.toLowerCase(java.util.Locale.ROOT)))label+=" [ИИ]";
+            String label=plainName(bot.getName())+" [ИИ]";
+            if(!seen.add(label.toLowerCase(java.util.Locale.ROOT)))continue;
             names.add(label);
         }
         if(names.size()==humanCount)return;
@@ -443,7 +445,7 @@ public final class SurvivorService extends CommandBase {
             nextHumanHelp=ticks+200;
             for(SurvivorPlayer bot:bots.values())if(bot.acceptHumanHelp(event.getPlayer())){
                 SurvivorTelemetry.event("chat",bot,"Бро, вижу тебя, попробую прикрыть.");
-                event.getPlayer().sendMessage(new TextComponentString("[ИИ] "+bot.getName()+": Бро, вижу тебя, попробую прикрыть."));break;
+                event.getPlayer().sendMessage(new TextComponentString(bot.getName()+": Бро, вижу тебя, попробую прикрыть."));break;
             }
         }
         for(SurvivorPlayer bot : bots.values()) {
@@ -455,8 +457,8 @@ public final class SurvivorService extends CommandBase {
             if(reply!=null) {
                 SurvivorTelemetry.event("chat",bot,reply);
                 for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
-                    player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
-                if(event.getPlayer().getDistanceSq(bot)>32*32)event.getPlayer().sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
+                    player.sendMessage(new TextComponentString(bot.getName()+": "+reply));
+                if(event.getPlayer().getDistanceSq(bot)>32*32)event.getPlayer().sendMessage(new TextComponentString(bot.getName()+": "+reply));
             }
             break;
         }
