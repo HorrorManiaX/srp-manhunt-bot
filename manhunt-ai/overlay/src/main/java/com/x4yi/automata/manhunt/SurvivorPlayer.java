@@ -68,6 +68,21 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         inventory.setInventorySlotContents(0, new ItemStack(Items.IRON_SWORD));
         inventory.setInventorySlotContents(1, new ItemStack(Items.BREAD, 8));
     }
+    void equipSiegeStarter(){
+        inventory.clear();
+        inventory.setInventorySlotContents(0,new ItemStack(Items.IRON_SWORD));
+        inventory.setInventorySlotContents(1,new ItemStack(Items.BREAD,24));
+        inventory.setInventorySlotContents(2,new ItemStack(Items.IRON_PICKAXE));
+        inventory.setInventorySlotContents(3,new ItemStack(net.minecraft.init.Blocks.COBBLESTONE,64));
+        inventory.setInventorySlotContents(4,new ItemStack(Items.IRON_AXE));
+        inventory.setInventorySlotContents(5,new ItemStack(net.minecraft.init.Blocks.TORCH,16));
+        inventory.setInventorySlotContents(6,new ItemStack(net.minecraft.init.Blocks.PLANKS,16));
+        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.HEAD,new ItemStack(Items.IRON_HELMET));
+        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.CHEST,new ItemStack(Items.IRON_CHESTPLATE));
+        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.LEGS,new ItemStack(Items.IRON_LEGGINGS));
+        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.FEET,new ItemStack(Items.IRON_BOOTS));
+        setHeldItem(EnumHand.OFF_HAND,new ItemStack(Items.SHIELD));inventory.markDirty();
+    }
     BlockPos homePosition(){return home;}
     boolean autonomousEnabled(){return work.isEnabled();}
     SurvivorProgression.Role role(){return work.role();}
