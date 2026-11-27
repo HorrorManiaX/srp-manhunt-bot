@@ -34,9 +34,10 @@ jobs:
       - name: Tactical decision regression tests
         run: |
           mkdir -p /tmp/manhunt-ai-test
-          javac -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorBrain.java manhunt-ai/tests/BrainSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorProgression.java manhunt-ai/tests/ProgressionSelfTest.java
+          javac -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorBrain.java manhunt-ai/tests/BrainSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorProgression.java manhunt-ai/tests/ProgressionSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorBlueprint.java manhunt-ai/tests/BlueprintSelfTest.java
           java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.BrainSelfTest
           java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.ProgressionSelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.BlueprintSelfTest
       - name: Build and test
         working-directory: automata-upstream
         run: bash gradlew build --no-daemon
