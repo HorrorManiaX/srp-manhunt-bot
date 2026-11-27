@@ -7,6 +7,8 @@ import net.minecraft.item.ItemArmor;
 /** Real workbench recipes only; prioritize protection and weapon readiness. */
 final class SurvivorEquipment {
     private SurvivorEquipment(){}
+    private static java.util.List<Item> gunRecipes;
+    private static int cursor;
     private static boolean has(SurvivorPlayer bot,Item item){
         for(int i=0;i<36;i++)if(bot.inventory.getStackInSlot(i).getItem()==item&&!bot.inventory.getStackInSlot(i).isEmpty())return true;
         return false;
@@ -26,6 +28,21 @@ final class SurvivorEquipment {
         if(!has(bot,Items.BOW)&&SurvivorCrafting.craftOutput(bot,Items.BOW,true))return true;
         int arrows=0;for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(s.getItem()==Items.ARROW)arrows+=s.getCount();}
         if(arrows<24&&SurvivorCrafting.craftOutput(bot,Items.ARROW,true))return true;
+        if(bot.role()==SurvivorProgression.Role.ENGINEER||bot.role()==SurvivorProgression.Role.GUARD){
+            if(gunRecipes==null){
+                gunRecipes=new java.util.ArrayList<>();
+                for(var r:net.minecraftforge.fml.common.registry.ForgeRegistries.RECIPES.getValuesCollection()){
+                    ItemStack output=r.getRecipeOutput();
+                    if(SurvivorWeapons.isGun(output)&&!r.isDynamic()&&!gunRecipes.contains(output.getItem()))gunRecipes.add(output.getItem());
+                }
+            }
+            boolean hasGun=false;
+            for(int i=0;i<36;i++)if(SurvivorWeapons.isGun(bot.inventory.getStackInSlot(i))){hasGun=true;break;}
+            if(!hasGun&&!gunRecipes.isEmpty())for(int i=0;i<Math.min(3,gunRecipes.size());i++){
+                Item item=gunRecipes.get(Math.floorMod(cursor++,gunRecipes.size()));
+                for(var id:SurvivorCrafting.recipesFor(item))if(SurvivorCrafting.craft(bot,id,true))return true;
+            }
+        }
         return false;
     }
 }
