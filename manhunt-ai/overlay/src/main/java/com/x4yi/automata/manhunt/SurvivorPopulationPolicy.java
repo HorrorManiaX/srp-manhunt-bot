@@ -2,6 +2,7 @@ package com.x4yi.automata.manhunt;
 /** Pure scheduling policy. Capacity is always bounded and recovery is deliberately slow. */
 public final class SurvivorPopulationPolicy {
     private SurvivorPopulationPolicy(){}
+    public static int joinDelay(java.util.Random random){return 1200+random.nextInt(10801);}
     public static int capacity(int requested){return Math.max(0,Math.min(6,requested));}
     public static boolean mayJoin(boolean enabled,boolean stressed,int active,int target,long now,long nextJoin){
         return enabled&&!stressed&&active<capacity(target)&&now>=nextJoin;
