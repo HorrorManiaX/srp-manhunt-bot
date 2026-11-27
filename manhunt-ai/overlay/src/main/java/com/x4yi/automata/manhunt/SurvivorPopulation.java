@@ -42,9 +42,10 @@ final class SurvivorPopulation {
         config.get("population","target",4).set(target);config.save();
         if(value){suppressed.clear();nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);failures=0;}
     }
-    void suppress(String name){suppressed.add(name.toLowerCase(Locale.ROOT));}
+    private static String canonical(String n){return (n.regionMatches(true,0,"AI_",0,3)?n:"AI_"+n).toLowerCase(Locale.ROOT);}
+    void suppress(String name){suppressed.add(canonical(name));}
     void lost(String name,boolean death){
-        String k=name.toLowerCase(Locale.ROOT);
+        String k=canonical(name);
         if(death){int n=deaths.merge(k,1,Integer::sum);cooldown.put(k,tick+SurvivorPopulationPolicy.deathDelay(n));}
         else cooldown.put(k,tick+6000);
     }
@@ -56,8 +57,8 @@ final class SurvivorPopulation {
         if(world==null){nextJoin=tick+200;return;}
         // Exactly one candidate attempt per pass. Restore only loaded snapshots.
         for(String name:NAMES){
-            String full="AI_"+name,k=full.toLowerCase(Locale.ROOT);
-            if(suppressed.contains(k)||cooldown.getOrDefault(k,0L)>tick||service.activeName(full)||server.getPlayerList().getPlayerByUsername(full)!=null)continue;
+            String full=name,k=canonical(full);
+            if(suppressed.contains(k)||cooldown.getOrDefault(k,0L)>tick||service.activeName(full)||(server.getPlayerList().getPlayerByUsername(full)!=null||server.getPlayerList().getPlayerByUsername("AI_"+full)!=null))continue;
             try{
                 SurvivorRoster roster=SurvivorRoster.get(world);
                 if(roster.contains(k)){
