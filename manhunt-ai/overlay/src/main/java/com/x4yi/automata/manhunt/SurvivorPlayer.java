@@ -192,7 +192,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         setHeldItem(EnumHand.OFF_HAND,new ItemStack(Items.SHIELD));inventory.markDirty();
     }
     @Override public net.minecraft.util.text.ITextComponent getTabListDisplayName(){
-        return new net.minecraft.util.text.TextComponentString(getName());
+        return new net.minecraft.util.text.TextComponentString(getName()+" [Купол]");
     }
     BlockPos homePosition(){return home;}
     boolean seasonNeedsIron(){return season.needsIron();}
