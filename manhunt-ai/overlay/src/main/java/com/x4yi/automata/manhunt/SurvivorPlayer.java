@@ -35,7 +35,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private int nextScan, nextLootScan, nextInventoryScan, alertUntil, nextEvade;
     private boolean stressed;
     private BlockPos lastThreat, plannedGoal, escapeGoal;
-    private int lastThreatTick, stuckTicks, explosionUntil;
+    private int lastThreatTick, stuckTicks, explosionUntil, nextHazardScan;
     private double lastX, lastZ;
     private net.minecraft.entity.item.EntityItem loot;
     private SurvivorBrain.Action previousAction = SurvivorBrain.Action.PATROL;
@@ -117,9 +117,29 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         if(best!=null) {target=best;if(age>=explosionUntil){lastThreat=best.getPosition();lastThreatTick=age;}alertUntil=age+100;}
     }
+    private void scanHazards() {
+        int checked=0;
+        for(net.minecraft.entity.Entity e:world.getEntitiesWithinAABBExcludingEntity(this,getEntityBoundingBox().grow(8))) {
+            if(++checked>64) break;
+            if(e.isDead) continue;
+            var id=net.minecraft.entity.EntityList.getKey(e);
+            if(SrpTacticalClassifier.isSrpAreaHazardId(id) || SrpTacticalClassifier.isSrpExplosiveId(id)) {
+                if(getDistanceSq(e)<36 && canEntityBeSeen(e)) {explosionAlert(e.getPosition());return;}
+            } else if(SrpTacticalClassifier.isSrpProjectileId(id) || e instanceof net.minecraft.entity.projectile.EntityArrow) {
+                double dx=posX-e.posX,dy=posY+.8-e.posY,dz=posZ-e.posZ;
+                double speed=e.motionX*e.motionX+e.motionY*e.motionY+e.motionZ*e.motionZ;
+                if(speed<.01) continue;
+                double t=(dx*e.motionX+dy*e.motionY+dz*e.motionZ)/speed;
+                if(t<0 || t>8) continue;
+                double x=dx-e.motionX*t,y=dy-e.motionY*t,z=dz-e.motionZ*t;
+                if(x*x+y*y+z*z<2.25 && canEntityBeSeen(e)) {explosionAlert(e.getPosition());return;}
+            }
+        }
+    }
     private void scanLoot() {
-        loot=null; double distance=144;
+        loot=null; double distance=144; int checked=0;
         for(net.minecraft.entity.item.EntityItem item:world.getEntitiesWithinAABB(net.minecraft.entity.item.EntityItem.class,getEntityBoundingBox().grow(12))) {
+            if(++checked>48) break;
             if(item.isDead || item.getItem().isEmpty() || item.cannotPickup() || item.getOwner()!=null) continue;
             ItemStack stack=item.getItem();
             if(!(stack.getItem() instanceof ItemFood || stack.getItem() instanceof net.minecraft.item.ItemSword || stack.getItem() instanceof ItemBlock)) continue;
@@ -195,6 +215,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             scanThreats();
             nextScan=age+SurvivorBrain.scanInterval(target!=null || age<alertUntil,stressed);
         }
+        if(age>=nextHazardScan && age>=explosionUntil) {nextHazardScan=age+(stressed?12:target!=null?3:8);scanHazards();}
         if(target==null && !stressed && age>=nextLootScan) {nextLootScan=age+40;scanLoot();}
         if(loot!=null && (loot.isDead || loot.cannotPickup() || getDistanceSq(loot)>144)) loot=null;
         if (target != null && (target.world != world || !target.isEntityAlive() || !ManhuntCompat.isHostile(target) || getDistanceSq(target) > 24 * 24)) target = null;
