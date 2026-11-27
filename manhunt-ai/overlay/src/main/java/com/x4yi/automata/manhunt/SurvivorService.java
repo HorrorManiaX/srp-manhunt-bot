@@ -64,7 +64,7 @@ public final class SurvivorService extends CommandBase {
         if(attacker instanceof net.minecraft.entity.EntityLivingBase living && com.x4yi.automata.compat.ManhuntCompat.isHostile(living)) {
             victim.alert(living,living.getPosition());
             squadAlert(victim,living);
-            for(SurvivorPlayer ally:bots.values()) if(ally!=victim && ally.world==victim.world && ally.getDistanceSq(victim)<=144 && ally.canEntityBeSeen(victim)) ally.alert(null,victim.getPosition());
+            for(SurvivorPlayer ally:bots.values()) if(ally!=victim && ally.world==victim.world && ally.getDistanceSq(victim)<=144 && ally.canEntityBeSeen(victim)) ally.alert(living,living.getPosition());
         } else victim.alert(null,victim.getPosition());
     }
     @SubscribeEvent(receiveCanceled=false)
@@ -215,6 +215,7 @@ public final class SurvivorService extends CommandBase {
     boolean activeName(String name){return bots.containsKey(key(name));}
     boolean parkedElsewhere(MinecraftServer server,String k){for(WorldServer w:server.worlds)if(w!=null&&w.provider.getDimension()!=0&&SurvivorRoster.get(w).contains(k))return true;return false;}
     BlockPos overworldCamp(WorldServer world){for(SurvivorPlayer bot:bots.values())if(bot.world==world)return bot.homePosition();return null;}
+    boolean homeTooClose(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.homePosition().distanceSq(p)<36)return true;return false;}
     boolean occupied(WorldServer world,BlockPos p){for(SurvivorPlayer bot:bots.values())if(bot.world==world&&bot.getDistanceSqToCenter(p)<16)return true;return false;}
     boolean autoSpawn(MinecraftServer server,WorldServer world,String name,BlockPos pos)throws CommandException{
         String k=key(name);if(bots.size()>=MAX||activeName(name)||!standable(world,pos))return false;
@@ -328,7 +329,7 @@ public final class SurvivorService extends CommandBase {
             }
         }
         MinecraftServer server=net.minecraftforge.fml.common.FMLCommonHandler.instance().getMinecraftServerInstance();
-        if(server!=null)population.tick(server,this,stressed||(System.nanoTime()-start)>4_000_000L);
+        if(server!=null&&ticks%20==0)try{population.tick(server,this,stressed||(System.nanoTime()-start)>4_000_000L);}catch(RuntimeException | LinkageError ex){population.failure(ex);}
         if(!stressed&&ticks%100==0&&(System.nanoTime()-start)<2_000_000L)SurvivorSquad.coordinate(new ArrayList<>(bots.values()),ticks/100);
         meanAiMs=meanAiMs*.95+(System.nanoTime()-start)/1_000_000.0*.05;
     }
