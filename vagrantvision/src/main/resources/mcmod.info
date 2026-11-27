@@ -1,0 +1,11 @@
+[
+  {
+    "modid": "vagrantvision",
+    "name": "VagrantVision",
+    "description": "Client-side parasite vision for SrpCotesia.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "authorList": ["VagrantVision contributors"],
+    "dependencies": ["srpcotesia"]
+  }
+]

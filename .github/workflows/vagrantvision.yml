@@ -1,0 +1,35 @@
+name: Build VagrantVision 1.0.0
+on:
+  push:
+    branches: [vagrantvision-1.0.0]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vagrantvision
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '4.10.3'
+      - name: Build and reobfuscate
+        run: gradle --no-daemon setupDecompWorkspace build
+      - name: Verify JAR
+        run: |
+          jar tf build/libs/VagrantVision-1.0.0.jar > jar-contents.txt
+          grep -q 'com/vagrantvision/VagrantVision.class' jar-contents.txt
+          grep -q 'assets/vagrantvision/shaders/parasite.frag' jar-contents.txt
+          if grep -q '^com/srpcotesia/' jar-contents.txt; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VagrantVision-1.0.0
+          path: vagrantvision/build/libs/VagrantVision-1.0.0.jar
+          if-no-files-found: error
