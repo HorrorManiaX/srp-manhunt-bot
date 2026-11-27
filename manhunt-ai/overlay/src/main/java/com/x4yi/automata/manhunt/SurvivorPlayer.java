@@ -157,19 +157,38 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     void equipSiegeStarter(){
         inventory.clear();
-        inventory.setInventorySlotContents(0,new ItemStack(Items.IRON_SWORD));
-        inventory.setInventorySlotContents(1,new ItemStack(Items.BREAD,24));
-        inventory.setInventorySlotContents(2,new ItemStack(Items.IRON_PICKAXE));
+        ItemStack sword=new ItemStack(Items.DIAMOND_SWORD);
+        sword.addEnchantment(net.minecraft.init.Enchantments.SHARPNESS,3);
+        sword.addEnchantment(net.minecraft.init.Enchantments.FIRE_ASPECT,2);
+        inventory.setInventorySlotContents(0,sword);
+        inventory.setInventorySlotContents(1,new ItemStack(Items.BREAD,32));
+        inventory.setInventorySlotContents(2,new ItemStack(Items.DIAMOND_PICKAXE));
         inventory.setInventorySlotContents(3,new ItemStack(net.minecraft.init.Blocks.COBBLESTONE,64));
         inventory.setInventorySlotContents(4,new ItemStack(Items.IRON_AXE));
         inventory.setInventorySlotContents(5,new ItemStack(net.minecraft.init.Blocks.TORCH,16));
-        inventory.setInventorySlotContents(6,new ItemStack(net.minecraft.init.Blocks.PLANKS,16));
-        inventory.setInventorySlotContents(7,new ItemStack(Items.BOW));
+        inventory.setInventorySlotContents(6,new ItemStack(net.minecraft.init.Blocks.PLANKS,24));
+        ItemStack bow=new ItemStack(Items.BOW);
+        bow.addEnchantment(net.minecraft.init.Enchantments.POWER,4);
+        bow.addEnchantment(net.minecraft.init.Enchantments.FLAME,1);
+        bow.addEnchantment(net.minecraft.init.Enchantments.UNBREAKING,2);
+        inventory.setInventorySlotContents(7,bow);
         inventory.setInventorySlotContents(8,new ItemStack(Items.ARROW,64));
-        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.HEAD,new ItemStack(Items.IRON_HELMET));
-        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.CHEST,new ItemStack(Items.IRON_CHESTPLATE));
-        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.LEGS,new ItemStack(Items.IRON_LEGGINGS));
-        setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.FEET,new ItemStack(Items.IRON_BOOTS));
+        inventory.setInventorySlotContents(9,new ItemStack(Items.ARROW,64));
+        inventory.setInventorySlotContents(10,new ItemStack(net.minecraft.init.Blocks.COBBLESTONE,64));
+        inventory.setInventorySlotContents(11,new ItemStack(net.minecraft.init.Blocks.OBSIDIAN,24));
+        inventory.setInventorySlotContents(12,new ItemStack(Items.GOLDEN_APPLE,4));
+        inventory.setInventorySlotContents(13,new ItemStack(Items.LAVA_BUCKET));
+        inventory.setInventorySlotContents(14,new ItemStack(Items.LAVA_BUCKET));
+        inventory.setInventorySlotContents(15,new ItemStack(net.minecraft.init.Blocks.LADDER,12));
+        inventory.setInventorySlotContents(16,new ItemStack(net.minecraft.init.Blocks.CRAFTING_TABLE));
+        inventory.setInventorySlotContents(17,new ItemStack(net.minecraft.init.Blocks.FURNACE));
+        for(var item:new net.minecraft.item.Item[]{Items.DIAMOND_HELMET,Items.DIAMOND_CHESTPLATE,Items.DIAMOND_LEGGINGS,Items.DIAMOND_BOOTS}){
+            ItemStack armor=new ItemStack(item);
+            armor.addEnchantment(net.minecraft.init.Enchantments.PROTECTION,3);
+            armor.addEnchantment(net.minecraft.init.Enchantments.UNBREAKING,2);
+            if(item==Items.DIAMOND_BOOTS)armor.addEnchantment(net.minecraft.init.Enchantments.FEATHER_FALLING,4);
+            setItemStackToSlot(((net.minecraft.item.ItemArmor)item).armorType,armor);
+        }
         setHeldItem(EnumHand.OFF_HAND,new ItemStack(Items.SHIELD));inventory.markDirty();
     }
     @Override public net.minecraft.util.text.ITextComponent getTabListDisplayName(){
@@ -538,6 +557,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(target!=null&&visible&&action!=SurvivorBrain.Action.EVADE&&SurvivorParasiteTactics.noMelee(target)){
             double minimum=SurvivorParasiteTactics.minRange(target);
             if(!hasLoadedGun()||getDistanceSq(target)<minimum*minimum)action=SurvivorBrain.Action.RETREAT;
+        }
+        if(action!=SurvivorBrain.Action.EVADE&&getHealth()<getMaxHealth()*.7f&&!isPotionActive(net.minecraft.init.MobEffects.ABSORPTION)&&!isPotionActive(net.minecraft.init.MobEffects.REGENERATION)&&(target==null||!visible||getDistanceSq(target)>196)){
+            for(int i=0;i<36;i++){ItemStack apple=inventory.getStackInSlot(i);if(!apple.isEmpty()&&apple.getItem()==Items.GOLDEN_APPLE){foodSlot=i;action=SurvivorBrain.Action.EAT;break;}}
         }
         if(action==SurvivorBrain.Action.APPROACH&&target!=null&&getPosition().distanceSq(home)>32*32)action=SurvivorBrain.Action.RETREAT;
         if(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&target!=null&&getDistanceSq(target)<9)action=findMelee()>=0&&target.getHealth()<=getMaxHealth()*2?SurvivorBrain.Action.MELEE:SurvivorBrain.Action.RETREAT;
