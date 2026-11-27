@@ -14,6 +14,8 @@ import net.minecraft.world.WorldServer;
 import com.x4yi.automata.movement.CellClassifier;
 /** Opt-in bounded local resource work. World mutations run exclusively on server thread. */
 final class SurvivorWork {
+    private record Claim(java.util.UUID owner,long expires) {}
+    private static final java.util.Map<WorldServer,java.util.Map<BlockPos,Claim>> reservations=new java.util.WeakHashMap<>();
     private final SurvivorPlayer bot;
     private final BlockPos home;
     private final SurvivorProgression.Role role;
@@ -55,8 +57,21 @@ final class SurvivorWork {
             has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE),has(Items.WOODEN_AXE,Items.STONE_AXE,Items.IRON_AXE,Items.DIAMOND_AXE),
             has(Items.WOODEN_SWORD,Items.STONE_SWORD,Items.IRON_SWORD,Items.DIAMOND_SWORD),blocks,shelterQueued);
     }
-    void interrupt(){resetMining();}
-    void clear(){resetMining();target=null;destination=null;scanCursor=0;task=SurvivorProgression.Task.IDLE;}
+    void interrupt(){if(stage>=0)resetMining();}
+    void clear(){resetMining();release();target=null;destination=null;scanCursor=0;task=SurvivorProgression.Task.IDLE;}
+    private boolean reserve(BlockPos p){
+        var map=reservations.computeIfAbsent(world(),w->new java.util.HashMap<>());
+        long now=world().getTotalWorldTime();
+        Claim old=map.get(p);
+        if(old!=null&&old.expires()>now&&!old.owner().equals(bot.getUniqueID()))return false;
+        if(map.size()>=128){map.entrySet().removeIf(e->e.getValue().expires()<=now);if(map.size()>=128&&!map.containsKey(p))return false;}
+        map.put(p.toImmutable(),new Claim(bot.getUniqueID(),now+300));return true;
+    }
+    private void release(){
+        if(target==null)return;
+        var map=reservations.get(world());
+        if(map!=null){Claim old=map.get(target);if(old!=null&&old.owner().equals(bot.getUniqueID()))map.remove(target);}
+    }
     private void resetMining(){
         if(target!=null&&stage>=0)world().sendBlockBreakProgress(bot.getEntityId(),target,-1);
         progress=0;stage=-1;miningState=null;
@@ -87,7 +102,7 @@ final class SurvivorWork {
     private boolean selectResource(BlockPos p){
         if(!matches(p,task)||!visible(p)||!SurvivorPermissions.allowed(bot,p,false))return false;
         BlockPos stand=adjacent(p);
-        if(stand==null)return false;
+        if(stand==null||!reserve(p))return false;
         target=p.toImmutable();destination=stand;deadline=age+240;
         memory().note(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",target,world().getTotalWorldTime());
         return true;
@@ -154,7 +169,7 @@ final class SurvivorWork {
     }
     boolean act(){
         if(!enabled||target==null)return false;
-        if(!matches(target,task)||!SurvivorPermissions.allowed(bot,target,false)){clear();return false;}
+        if(!matches(target,task)||!SurvivorPermissions.allowed(bot,target,false)||!reserve(target)){clear();return false;}
         if(bot.getDistanceSqToCenter(target)>16||!visible(target)){resetMining();return false;}
         if(!bot.onGround&&!bot.isInWater())return false;
         IBlockState state=world().getBlockState(target);
