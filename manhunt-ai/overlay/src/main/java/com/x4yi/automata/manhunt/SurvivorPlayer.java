@@ -530,7 +530,11 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(helpCaller!=null&&(!helpCaller.isEntityAlive()||helpCaller.world!=world))clearHelp();
         BlockPos assistance=helpDestination();
         if(assistance==null&&autonomousEnabled()&&target==null)assistance=SurvivorFinalBattle.rendezvous(this);
-        BlockPos infrastructure=lavaTrap.destination()!=null?lavaTrap.destination():defenseStation.destination();
+        if(action==SurvivorBrain.Action.PATROL&&assistance==null&&buildGoal==null&&!stressed&&autonomousEnabled()){
+            boolean handled=vehicleWork(age);
+            if(!handled&&vehicles.destination()==null&&buildGoal==null&&(role()==SurvivorProgression.Role.ENGINEER||role()==SurvivorProgression.Role.GUARD))turretWork(age);
+        }
+        BlockPos infrastructure=lavaTrap.destination()!=null?lavaTrap.destination():defenseStation.destination()!=null?defenseStation.destination():vehicles.destination()!=null?vehicles.destination():autoTurret.destination();
         if(action==SurvivorBrain.Action.PATROL&&assistance==null&&buildGoal==null&&!stressed)defenseStation.tick(age);
         if(action==SurvivorBrain.Action.PATROL && assistance==null && buildGoal==null&&!stressed&&furnace.active())furnace.tick(age);
         if(action==SurvivorBrain.Action.PATROL&&assistance==null&&infrastructure==null&&buildGoal==null&&!furnace.active())foodRecovery.plan(age,stressed);
