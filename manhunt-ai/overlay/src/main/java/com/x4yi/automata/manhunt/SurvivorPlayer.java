@@ -63,6 +63,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         inventory.setInventorySlotContents(0, new ItemStack(Items.IRON_SWORD));
         inventory.setInventorySlotContents(1, new ItemStack(Items.BREAD, 8));
     }
+    BlockPos homePosition(){return home;}
+    boolean autonomousEnabled(){return work.isEnabled();}
+    String technologyGoalId(){return work.goalId();}
     public String activity() { return activity+"/"+work.status(); }
     void autonomous(boolean enable){work.enabled(enable);invalidateRoute();}
     boolean techGoal(net.minecraft.util.ResourceLocation id){return work.goal(id);}
