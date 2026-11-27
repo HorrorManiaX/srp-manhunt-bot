@@ -53,7 +53,7 @@ public final class SurvivorService extends CommandBase {
             if(statusPublished!=null&&current==statusPublished)response.setServerDescription(statusOriginal);
             statusPublished=null;
         }else{
-            statusPublished=statusOriginal.createCopy().appendText("\nКупол (ИИ): "+names);
+            statusPublished=statusOriginal.createCopy().appendText("\n"+names);
             response.setServerDescription(statusPublished);
         }
         lastStatusNames=names;
@@ -358,7 +358,7 @@ public final class SurvivorService extends CommandBase {
         try{activate(server,world,bot);roster.markRecruited(k);return true;}
         catch(CommandException e){roster.park(k,bot);throw e;}
     }
-    private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString("[Купол] "+message));}
+    private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString(message));}
     private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{
         String name=bot.getName();
         // Validate before world insertion: vanilla can replace an existing entity on a UUID collision.
@@ -403,7 +403,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values())if(bot.isEntityAlive())agents.add(bot.getName());
         sender.sendMessage(new TextComponentString("Участники мира: "+(humans.size()+agents.size())));
         sender.sendMessage(new TextComponentString("Игроки ("+humans.size()+"): "+(humans.isEmpty()?"—":String.join(", ",humans))));
-        sender.sendMessage(new TextComponentString("Купол — агенты ИИ ("+agents.size()+"): "+(agents.isEmpty()?"—":String.join(", ",agents))));
+        sender.sendMessage(new TextComponentString("Агенты ИИ ("+agents.size()+"): "+(agents.isEmpty()?"—":String.join(", ",agents))));
     }
     private static String plainName(String name){
         return name.regionMatches(true,0,"AI_",0,3)?name.substring(3):name;
@@ -422,7 +422,7 @@ public final class SurvivorService extends CommandBase {
         int humanCount=names.size();
         for(SurvivorPlayer bot:bots.values()){
             if(!bot.isEntityAlive())continue;
-            String label=plainName(bot.getName())+" [Купол]";
+            String label=plainName(bot.getName());
             if(!seen.add(label.toLowerCase(java.util.Locale.ROOT)))continue;
             names.add(label);
         }
@@ -472,7 +472,7 @@ public final class SurvivorService extends CommandBase {
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player instanceof EntityPlayerMP player && !(player instanceof SurvivorPlayer) && !(player instanceof net.minecraftforge.common.util.FakePlayer) && player.connection != null) {
-            player.sendMessage(new TextComponentString("Купол — отряд под управлением ИИ. Состав участников: /participants"));
+            player.sendMessage(new TextComponentString("Состав участников: /participants"));
         }
     }
     private int nextHumanHelp;

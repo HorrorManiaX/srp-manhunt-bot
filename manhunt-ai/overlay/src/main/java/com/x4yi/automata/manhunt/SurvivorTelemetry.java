@@ -2,7 +2,7 @@ package com.x4yi.automata.manhunt;
 import com.google.gson.JsonObject;
 import com.x4yi.automata.AutomataMod;
 /** Log genuine agent events in structured and existing Telegram-compatible chat formats.
- * The old SFTP parser understands <name> text but not lifecycle events. Label all AI messages. */
+ * The legacy SFTP parser understands <name> text; structured JSON retains the agent identity. */
 final class SurvivorTelemetry {
     private SurvivorTelemetry(){}
     static void event(String type,SurvivorPlayer player,String text){
@@ -23,6 +23,6 @@ final class SurvivorTelemetry {
             case "kill" -> "Уничтожил противника: "+body;
             default -> "";
         };
-        if(!line.isEmpty())AutomataMod.LOGGER.info("<{}> [Купол] {}",player.getName(),line);
+        if(!line.isEmpty())AutomataMod.LOGGER.info("<{}> {}",player.getName(),line);
     }
 }
