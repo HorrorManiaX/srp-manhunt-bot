@@ -65,6 +65,8 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     public String activity() { return activity+"/"+work.status(); }
     void autonomous(boolean enable){work.enabled(enable);invalidateRoute();}
+    boolean techGoal(net.minecraft.util.ResourceLocation id){return work.goal(id);}
+    void clearTechGoal(){work.clearGoal();}
     void faceBlock(BlockPos p){lookAt(p.getX()+.5,p.getY()+.5,p.getZ()+.5);}
     int equipInventorySlot(int i){if(i<0||i>=36)return -1;if(i>=9){int h=inventory.currentItem;ItemStack old=inventory.getStackInSlot(h);inventory.setInventorySlotContents(h,inventory.getStackInSlot(i));inventory.setInventorySlotContents(i,old);i=h;inventory.markDirty();}inventory.currentItem=i;return i;}
     public void cancelPlanning() { work.clear();invalidateRoute(); }
@@ -289,6 +291,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         } else {
             if (isHandActive()) stopActiveHand();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
+            if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
             if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed)work.act();
         }
         onUpdateEntity();
