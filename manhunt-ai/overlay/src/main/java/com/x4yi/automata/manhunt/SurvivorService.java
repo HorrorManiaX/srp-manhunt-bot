@@ -61,6 +61,7 @@ public final class SurvivorService extends CommandBase {
     @SubscribeEvent(receiveCanceled=false)
     public void onAttacked(net.minecraftforge.event.entity.living.LivingAttackEvent event) {
         if(event.getEntityLiving().world.isRemote || !(event.getEntityLiving() instanceof SurvivorPlayer victim)) return;
+        victim.tookDamage();
         net.minecraft.entity.Entity attacker=event.getSource().getTrueSource();
         if(attacker instanceof net.minecraft.entity.EntityLivingBase living && com.x4yi.automata.compat.ManhuntCompat.isHostile(living)) {
             victim.alert(living,living.getPosition());
