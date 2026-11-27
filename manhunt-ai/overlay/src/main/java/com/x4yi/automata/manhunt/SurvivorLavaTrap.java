@@ -15,7 +15,8 @@ import net.minecraft.util.math.AxisAlignedBB;
 final class SurvivorLavaTrap {
     private final SurvivorPlayer bot;
     private BlockPos target,approach;
-    private int expires;
+    private int expires,nextAuto,segment;
+    private boolean autoEnabled=true;
     private String status="idle";
     SurvivorLavaTrap(SurvivorPlayer bot){this.bot=bot;}
     String status(){return status;}
@@ -37,6 +38,39 @@ final class SurvivorLavaTrap {
     private int bucket(){
         for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(!s.isEmpty()&&s.getItem()==Items.LAVA_BUCKET)return i;}
         return -1;
+    }
+    boolean autoPlan(int age){
+        if(!autoEnabled||target!=null||age<nextAuto||bucket()<0||bot.constructionStock()<8)return false;
+        nextAuto=age+160;
+        // Four side pockets, not a continuous wall: leave the northern entry and escape lanes open.
+        BlockPos[] cells={bot.homePosition().add(6,0,-2),bot.homePosition().add(-6,0,2),bot.homePosition().add(2,0,6),bot.homePosition().add(-2,0,6)};
+        for(int attempt=0;attempt<cells.length;attempt++){
+            BlockPos p=cells[Math.floorMod(segment++,cells.length)];
+            if(!bot.world.isBlockLoaded(p)||!bot.world.isAirBlock(p)||!SurvivorPermissions.allowed(bot,p,true))continue;
+            boolean safe=true;java.util.List<BlockPos> missing=new java.util.ArrayList<>();
+            for(EnumFacing f:new EnumFacing[]{EnumFacing.DOWN,EnumFacing.NORTH,EnumFacing.SOUTH,EnumFacing.EAST,EnumFacing.WEST}){
+                BlockPos q=p.offset(f);
+                if(stone(q))continue;
+                if(!bot.world.isBlockLoaded(q)||!bot.world.isAirBlock(q)||!SurvivorPermissions.allowed(bot,q,true)){safe=false;break;}
+                missing.add(q);
+            }
+            if(!safe)continue;
+            for(BlockPos q:BlockPos.getAllInBoxMutable(p.add(-2,-1,-2),p.add(2,3,2)))
+                if(!bot.world.isBlockLoaded(q)||bot.world.getBlockState(q).getMaterial().getCanBurn()){safe=false;break;}
+            if(!safe)continue;
+            if(!bot.world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(3),e->e!=bot).isEmpty())continue;
+            if(missing.isEmpty()&&request(p,age))return true;
+            for(BlockPos q:missing){
+                if(!bot.world.isBlockLoaded(q.down())||!bot.world.getBlockState(q.down()).isFullCube())continue;
+                for(String id:new String[]{"minecraft:obsidian","minecraft:cobblestone","minecraft:stone","minecraft:stonebrick"}){
+                    for(int i=0;i<36;i++){
+                        ItemStack stack=bot.inventory.getStackInSlot(i);
+                        if(!stack.isEmpty()&&new net.minecraft.util.ResourceLocation(id).equals(stack.getItem().getRegistryName())&&bot.requestBuild(q,new net.minecraft.util.ResourceLocation(id))){status="constructing lava pocket";return true;}
+                    }
+                }
+            }
+        }
+        return false;
     }
     boolean request(BlockPos p,int age){
         if(target!=null||bucket()<0||!contained(p))return false;
