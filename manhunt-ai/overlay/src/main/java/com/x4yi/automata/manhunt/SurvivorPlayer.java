@@ -217,6 +217,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         victories++;
         if(age<nextVictoryChat)return;
         nextVictoryChat=age+400;
+        SurvivorTelemetry.event("chat",this,"Противник уничтожен. Проверяю окрестности.");
         for(EntityPlayerMP p:getServer().getPlayerList().getPlayers())if(p.world==world&&p.getDistanceSq(this)<=256&&!ManhuntCompat.isHostile(p))p.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+getName()+": противник уничтожен. Проверяю окрестности."));
     }
     public String activity() { return "order="+combatOrder+"/kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus()+"/season="+season.status()+"/OMT="+autoTurret.status()+"/MCH="+vehicles.status()+"/arena="+arena.status(); }
