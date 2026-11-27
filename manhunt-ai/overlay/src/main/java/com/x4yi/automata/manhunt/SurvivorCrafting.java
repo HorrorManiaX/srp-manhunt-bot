@@ -76,7 +76,7 @@ final class SurvivorCrafting {
     }
     static boolean craft(SurvivorPlayer bot,ResourceLocation id,boolean table) {
         IRecipe r = ForgeRegistries.RECIPES.getValue(id);
-        if (r == null || r.isDynamic()) return false;
+        if (r == null || r.isDynamic() || SurvivorVehicles.aircraft(r.getRecipeOutput())) return false;
         List<Ingredient> ingredients = r.getIngredients();
         int size=table?3:2;
         int w = r instanceof IShapedRecipe shaped ? shaped.getRecipeWidth() : size;
