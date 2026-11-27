@@ -119,6 +119,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         setItemStackToSlot(net.minecraft.inventory.EntityEquipmentSlot.FEET,new ItemStack(Items.IRON_BOOTS));
         setHeldItem(EnumHand.OFF_HAND,new ItemStack(Items.SHIELD));inventory.markDirty();
     }
+    @Override public net.minecraft.util.text.ITextComponent getTabListDisplayName(){
+        return new net.minecraft.util.text.TextComponentString(getName()+" [ИИ]");
+    }
     BlockPos homePosition(){return home;}
     boolean autonomousEnabled(){return work.isEnabled();}
     SurvivorProgression.Role role(){return work.role();}
