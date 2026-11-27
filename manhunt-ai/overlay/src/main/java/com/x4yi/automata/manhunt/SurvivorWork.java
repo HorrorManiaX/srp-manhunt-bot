@@ -20,8 +20,9 @@ final class SurvivorWork {
     private final BlockPos home;
     private final SurvivorProgression.Role role;
     private final SurvivorTechnology technology;
-    private int nextTech;
+    private int nextTech,nextDefenseMaterials;
     private boolean industry;
+    private int defenseDeficit;
     private net.minecraft.block.Block requestedOre;
     private boolean enabled,shelterQueued;
     private int age,nextPlan,scanCursor,deadline;
@@ -159,7 +160,19 @@ final class SurvivorWork {
         if(target!=null && (age>=deadline||!matches(target,task))){clear();}
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
+        if(age>=nextDefenseMaterials){
+            nextDefenseMaterials=age+200;
+            defenseDeficit=SurvivorDefense.neededBlocks(bot.missingWallBlocks(),bot.constructionStock());
+        }
         if(technology.active()&&age>=nextTech){nextTech=age+80;if(technology.step(SurvivorCrafting.nearbyBench(bot))){memory().count(bot.getUniqueID(),"crafted");return;}}
+        if(defenseDeficit>0 && has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)&&count(Item.getItemFromBlock(Blocks.COBBLESTONE))<Math.min(32,defenseDeficit+4)){
+            if(task!=SurvivorProgression.Task.STONE||requestedOre!=null){clear();requestedOre=null;task=SurvivorProgression.Task.STONE;}
+            findResource();
+            if(target!=null)return;
+            // After one local scan, permit other survival tasks even if no stone is visible.
+            if(scanCursor<3125)return;
+            defenseDeficit=0;scanCursor=0;
+        }
         if(industry&&has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)){
             if(industrialStep())return;
         }
@@ -200,8 +213,8 @@ final class SurvivorWork {
             }
             return false;
         }
-        if(!has(Items.COAL)){mineOre(Blocks.COAL_ORE);return true;}
-        if(!has(ore)){mineOre(Blocks.IRON_ORE);return true;}
+        if(!has(Items.COAL)){mineOre(Blocks.COAL_ORE);return target!=null||scanCursor<3125;}
+        if(!has(ore)){mineOre(Blocks.IRON_ORE);return target!=null||scanCursor<3125;}
         if(!bot.furnaceBusy())bot.smelt(ore.getRegistryName());
         return true;
     }
