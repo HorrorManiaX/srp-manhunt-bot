@@ -19,6 +19,8 @@ final class SurvivorWork {
     private final SurvivorPlayer bot;
     private final BlockPos home;
     private final SurvivorProgression.Role role;
+    private final SurvivorTechnology technology;
+    private int nextTech;
     private boolean enabled,shelterQueued;
     private int age,nextPlan,scanCursor,deadline;
     private BlockPos target,destination,bench;
@@ -26,8 +28,10 @@ final class SurvivorWork {
     private float progress;
     private int stage=-1;
     private SurvivorProgression.Task task=SurvivorProgression.Task.IDLE;
-    SurvivorWork(SurvivorPlayer bot,BlockPos home) {this.bot=bot;this.home=home;role=SurvivorProgression.role(bot.getUniqueID().hashCode());}
-    String status(){return role.name()+"/"+(enabled?task.name():"DISABLED");}
+    SurvivorWork(SurvivorPlayer bot,BlockPos home) {this.bot=bot;this.home=home;role=SurvivorProgression.role(bot.getUniqueID().hashCode());technology=new SurvivorTechnology(bot);}
+    String status(){return role.name()+"/"+(enabled?task.name():"DISABLED")+(technology.active()?" goal="+technology.status():"");}
+    boolean goal(net.minecraft.util.ResourceLocation id){return technology.setGoal(id);}
+    void clearGoal(){technology.clear();}
     void enabled(boolean value){enabled=value;if(!value)clear();}
     BlockPos destination(){return enabled?destination:null;}
     private WorldServer world(){return (WorldServer)bot.world;}
@@ -147,6 +151,7 @@ final class SurvivorWork {
         if(target!=null && (age>=deadline||!matches(target,task))){clear();}
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
+        if(technology.active()&&age>=nextTech){nextTech=age+80;if(technology.step(SurvivorCrafting.nearbyBench(bot))){memory().count(bot.getUniqueID(),"crafted");return;}}
         SurvivorProgression.Task next=SurvivorProgression.choose(stock(),role);
         // If food is low, loot perception has priority; still allow basic tool progression.
         if(next==SurvivorProgression.Task.FOOD){
