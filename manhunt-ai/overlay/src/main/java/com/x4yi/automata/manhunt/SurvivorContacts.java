@@ -22,7 +22,7 @@ final class SurvivorContacts {
         if(mention(message,"BRO"))return "Бро — игрок с ником на BRO. Если он на стороне людей и рядом, можем прикрыть. Сначала проверим обстановку.";
         return null;
     }
-    static boolean friendly(EntityPlayer p){return !ManhuntCompat.isHostile(p)&&!p.isSpectator()&&!p.capabilities.isCreativeMode;}
+    static boolean friendly(EntityPlayer p){return ManhuntCompat.confirmedHuman(p);}
     static boolean distress(String m){
         m=m.toLowerCase(Locale.ROOT);
         return m.contains("помог")||m.contains("помощ")||m.contains("прикрой")||m.contains("умира")||m.contains("сносят")||m.contains("рейд");
