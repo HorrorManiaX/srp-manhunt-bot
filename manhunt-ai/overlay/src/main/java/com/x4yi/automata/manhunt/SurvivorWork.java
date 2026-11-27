@@ -32,6 +32,8 @@ final class SurvivorWork {
     String status(){return role.name()+"/"+(enabled?task.name():"DISABLED")+(technology.active()?" goal="+technology.status():"");}
     boolean goal(net.minecraft.util.ResourceLocation id){return technology.setGoal(id);}
     void clearGoal(){technology.clear();}
+    boolean isEnabled(){return enabled;}
+    String goalId(){return technology.goalId();}
     void enabled(boolean value){enabled=value;if(!value)clear();}
     BlockPos destination(){return enabled?destination:null;}
     private WorldServer world(){return (WorldServer)bot.world;}
