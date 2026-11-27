@@ -66,9 +66,6 @@ final class SurvivorHelp {
     }
     private static String pick(SurvivorPlayer bot,String... lines){return lines[bot.getRNG().nextInt(lines.length)];}
     private static void say(SurvivorPlayer bot,String text){
-        SurvivorTelemetry.event("chat",bot,text);
-        for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())
-            if(p.world==bot.world&&p.getDistanceSq(bot)<=48*48&&!ManhuntCompat.isHostile(p))
-                p.sendMessage(new TextComponentString(bot.getName()+": "+text));
+        SurvivorService.INSTANCE.localSpeech(bot,48,text);
     }
 }
