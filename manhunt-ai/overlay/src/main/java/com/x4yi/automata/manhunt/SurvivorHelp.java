@@ -28,7 +28,7 @@ final class SurvivorHelp {
             if(helper.getDistanceSq(caller)<=9&&helper.canEntityBeSeen(caller)){
                 var resource=r.need()==SurvivorHelpPolicy.Need.FOOD?SurvivorSupplyPolicy.Resource.FOOD:SurvivorSupplyPolicy.Resource.COBBLESTONE;
                 int moved=SurvivorSquad.deliver(helper,caller,resource);
-                if(moved>0){say(helper,caller.getName()+", передал припасы ("+moved+").");say(caller,"Спасибо, "+helper.getName()+".");}
+                if(moved>0){say(helper,caller.getName()+", "+pick(helper,"на держи, нашел немного ресов","держи, это могу отдать","на, выручайся")+" ("+moved+").");say(caller,pick(caller,"спасибо братан","о, выручил","красава, спасибо"));}
                 else say(helper,caller.getName()+", сейчас не могу передать припасы.");
                 helper.clearHelp();tasks.remove(helper.getUniqueID());
             }else helper.assist(caller,false);
@@ -44,10 +44,10 @@ final class SurvivorHelp {
             if(helper==null)continue;
             nextRequest.put(caller.getUniqueID(),now+600);
             say(caller,helper.getName()+", "+switch(need){
-                case FOOD -> "нужна еда, запас заканчивается.";
-                case MATERIALS -> "нужны материалы для укрепления.";
-                case COMBAT -> "нужна поддержка против паразитов!";
-                case EMERGENCY -> "срочно нужна помощь, отступаю!";
+                case FOOD -> pick(caller,"братан, дай че-нибудь пожрать, вообще голяк","еды не осталось, выручишь?","бля, жрать нечего, есть лишнее?");
+                case MATERIALS -> pick(caller,"брат, ресы на стены есть? тут вообще голяк","сука, опять стену чинить, есть булыжник?","нужны блоки, иначе нас тут сожрут");
+                case COMBAT -> pick(caller,"блять, помоги, тут пиздец с паразитами!","братан, сюда, я один не вывожу!","сука, их тут дохуя, нужна помощь!");
+                case EMERGENCY -> pick(caller,"БЛЯТЬ ПОМОГИ, Я ЩАС СДОХНУ!","ПИЗДЕЦ, отхожу, прикрой!","БРАТАН ПОМОГИ СУКА, МЕНЯ СНОСЯТ!");
             });
             boolean combat=need.priority>=75;
             var resource=need==SurvivorHelpPolicy.Need.FOOD?SurvivorSupplyPolicy.Resource.FOOD:SurvivorSupplyPolicy.Resource.COBBLESTONE;
@@ -55,15 +55,16 @@ final class SurvivorHelp {
             var decision=SurvivorHelpPolicy.decide(need,helper.helpPriority(),capable,helper.canHelpSafely(combat));
             if(decision==SurvivorHelpPolicy.Decision.ACCEPT){
                 tasks.put(helper.getUniqueID(),new Request(caller,need,now+600));helper.assist(caller,combat);
-                say(helper,caller.getName()+", принято. Иду помогать.");
+                say(helper,caller.getName()+", "+pick(helper,"ща, бегу","давай, попробую помочь","понял, держись, иду"));
             }else say(helper,caller.getName()+", "+switch(decision){
-                case BUSY -> "не могу, моя задача сейчас важнее.";
-                case UNSAFE -> "не могу, сам в опасности.";
-                default -> "не могу, нет необходимых припасов или оружия.";
+                case BUSY -> pick(helper,"братан, занят, сам тут разгребаю","не могу щас, своя задача горит","погоди, мне сначала свое закончить надо");
+                case UNSAFE -> pick(helper,"БЛЯТЬ Я САМ ЩАС УМИРАЮ","сука, у меня тут тоже пиздец","братан, сам еле выживаю");
+                default -> pick(helper,"братан, у самого голяк","нечего дать, вообще пусто","сам бы щас не отказался");
             });
             return;
         }
     }
+    private static String pick(SurvivorPlayer bot,String... lines){return lines[bot.getRNG().nextInt(lines.length)];}
     private static void say(SurvivorPlayer bot,String text){
         for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())
             if(p.world==bot.world&&p.getDistanceSq(bot)<=48*48&&!ManhuntCompat.isHostile(p))
