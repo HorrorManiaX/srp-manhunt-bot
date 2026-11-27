@@ -3,9 +3,15 @@ on:
   push:
     branches: [manhunt-ai]
     paths: ['manhunt-ai/**', '.github/workflows/manhunt-ai.yml']
+  pull_request:
+    branches: [main]
+    paths: ['manhunt-ai/**', '.github/workflows/manhunt-ai.yml']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: manhunt-ai-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
