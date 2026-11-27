@@ -35,7 +35,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private int nextScan, nextLootScan, nextInventoryScan, alertUntil, nextEvade;
     private boolean stressed;
     private BlockPos lastThreat, plannedGoal, escapeGoal;
-    private int lastThreatTick, stuckTicks;
+    private int lastThreatTick, stuckTicks, explosionUntil;
     private double lastX, lastZ;
     private net.minecraft.entity.item.EntityItem loot;
     private SurvivorBrain.Action previousAction = SurvivorBrain.Action.PATROL;
@@ -56,6 +56,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         getEntityData().setBoolean("ManhuntAIPlayer", true);
         setGameType(GameType.SURVIVAL);
         setPositionAndRotation(pos.getX() + .5, pos.getY(), pos.getZ() + .5, 0, 0);
+        nextScan=1+Math.floorMod(profile.getId().hashCode(),10); nextLootScan=1+Math.floorMod(profile.getId().hashCode(),40);
         inventory.setInventorySlotContents(0, new ItemStack(Items.IRON_SWORD));
         inventory.setInventorySlotContents(1, new ItemStack(Items.BREAD, 8));
     }
@@ -74,6 +75,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         alertUntil=age+100; nextScan=age;
         if (source != null && source.world==world && source.isEntityAlive() && canEntityBeSeen(source)) target=source;
     }
+    void explosionAlert(BlockPos pos) {
+        alert(null,pos); explosionUntil=age+30; nextEvade=age; escapeGoal=null;
+    }
     private boolean standable(BlockPos p) {
         return world.isBlockLoaded(p) && world.isBlockLoaded(p.up()) && world.isBlockLoaded(p.down())
             && CellClassifier.isPassable(world,p) && CellClassifier.isPassable(world,p.up())
@@ -81,10 +85,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     private boolean dangerousHere() {
         BlockPos p=getPosition();
-        return isBurning() || isInLava() || (world.isBlockLoaded(p) && world.getBlockState(p).getBlock()==net.minecraft.init.Blocks.FIRE);
+        return age<explosionUntil || isBurning() || isInLava() || (world.isBlockLoaded(p) && world.getBlockState(p).getBlock()==net.minecraft.init.Blocks.FIRE);
     }
     private BlockPos chooseEscape() {
-        BlockPos here=getPosition(), threat=target!=null ? target.getPosition() : lastThreat;
+        BlockPos here=getPosition(), threat=age<explosionUntil ? lastThreat : target!=null && canEntityBeSeen(target) ? target.getPosition() : lastThreat;
         BlockPos best=null; double bestScore=-Double.MAX_VALUE;
         for(int i=0;i<16;i++) {
             double a=2*Math.PI*(i%8)/8;
@@ -102,7 +106,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private void scanThreats() {
         java.util.List<EntityLivingBase> candidates=world.getEntitiesWithinAABB(EntityLivingBase.class,getEntityBoundingBox().grow(20),
             e -> e!=this && e.isEntityAlive() && ManhuntCompat.isHostile(e));
-        candidates.sort(java.util.Comparator.comparingDouble(this::getDistanceSq));
+        candidates.sort(java.util.Comparator.comparingDouble(e -> getDistanceSq(e)));
         EntityLivingBase best=null; double score=Double.MAX_VALUE;
         for(int i=0;i<Math.min(8,candidates.size());i++) {
             EntityLivingBase e=candidates.get(i);
@@ -111,7 +115,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(e==target) value*=.75;
             if(value<score) {best=e;score=value;}
         }
-        if(best!=null) {target=best;lastThreat=best.getPosition();lastThreatTick=age;alertUntil=age+100;}
+        if(best!=null) {target=best;if(age>=explosionUntil){lastThreat=best.getPosition();lastThreatTick=age;}alertUntil=age+100;}
     }
     private void scanLoot() {
         loot=null; double distance=144;
@@ -158,7 +162,6 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     private int findMelee() {
         for (int i=0; i<9; i++) if (inventory.getStackInSlot(i).getItem() instanceof net.minecraft.item.ItemSword) return i;
-        for (int i=0; i<9; i++) if (inventory.getStackInSlot(i).isEmpty()) return i;
         return -1;
     }
     private void placeRequestedBlock() {
@@ -196,7 +199,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(loot!=null && (loot.isDead || loot.cannotPickup() || getDistanceSq(loot)>144)) loot=null;
         if (target != null && (target.world != world || !target.isEntityAlive() || !ManhuntCompat.isHostile(target) || getDistanceSq(target) > 24 * 24)) target = null;
         boolean visible=target!=null && canEntityBeSeen(target);
-        if(visible) {lastThreat=target.getPosition();lastThreatTick=age;}
+        if(visible && age>=explosionUntil) {lastThreat=target.getPosition();lastThreatTick=age;}
         if(target!=null && !visible && age-lastThreatTick>60) target=null;
         var profile=SrpTacticalClassifier.classify(target);
         var action=SurvivorBrain.choose(new SurvivorBrain.Situation(getHealth(),getMaxHealth(),getFoodStats().needFood(),foodSlot>=0,
@@ -216,7 +219,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             try { path = pending.getNow(PathResult.EMPTY); } catch (RuntimeException e) { path = PathResult.EMPTY; }
             pending = null; step = 0;
         }
-        if (age >= nextPlan && pending == null) {
+        if (age >= nextPlan && pending == null && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
             nextPlan=age+(stressed?60:retreat?15:30)+rand.nextInt(10);
             BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?buildGoal:action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():patrolGoal();
             if(goal!=null) plannedGoal=goal;
@@ -243,7 +246,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
                 swingArm(EnumHand.MAIN_HAND);
             }
         } else { followPath(); if(retreat && moveForward>0 && getFoodStats().getFoodLevel()>6) setSprinting(true); }
-        if ((action==SurvivorBrain.Action.EAT || (retreat && target==null)) && foodSlot >= 0 && inventory.getStackInSlot(foodSlot).getItem() instanceof ItemFood && !inventory.getStackInSlot(foodSlot).isEmpty()) {
+        if (action==SurvivorBrain.Action.EAT && foodSlot >= 0 && inventory.getStackInSlot(foodSlot).getItem() instanceof ItemFood && !inventory.getStackInSlot(foodSlot).isEmpty()) {
             inventory.currentItem = foodSlot; moveForward = 0;
             if (!isHandActive()) setActiveHand(EnumHand.MAIN_HAND);
         } else {
