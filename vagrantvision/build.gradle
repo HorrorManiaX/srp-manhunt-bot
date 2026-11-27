@@ -9,7 +9,7 @@ archivesBaseName = 'VagrantVision'
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 minecraft {
-    version = '1.12.2-14.23.5.2860'
+    version = '1.12.2-14.23.5.2847'
     runDir = 'run'
     mappings = 'snapshot_20171003'
 }
