@@ -20,7 +20,9 @@ final class SurvivorWork {
     private final BlockPos home;
     private final SurvivorProgression.Role role;
     private final SurvivorTechnology technology;
-    private int nextTech;
+    private int nextTech,nextIndustry;
+    private boolean industry;
+    private net.minecraft.block.Block requestedOre;
     private boolean enabled,shelterQueued;
     private int age,nextPlan,scanCursor,deadline;
     private BlockPos target,destination,bench;
@@ -32,6 +34,8 @@ final class SurvivorWork {
     String status(){return role.name()+"/"+(enabled?task.name():"DISABLED")+(technology.active()?" goal="+technology.status():"");}
     boolean goal(net.minecraft.util.ResourceLocation id){return technology.setGoal(id);}
     void clearGoal(){technology.clear();}
+    void industry(boolean value){industry=value;requestedOre=null;if(!value)clear();}
+    boolean industryEnabled(){return industry;}
     boolean isEnabled(){return enabled;}
     String goalId(){return technology.goalId();}
     void enabled(boolean value){enabled=value;if(!value)clear();}
@@ -102,6 +106,7 @@ final class SurvivorWork {
     private boolean matches(BlockPos p,SurvivorProgression.Task kind){
         if(!world().isBlockLoaded(p)||p.distanceSq(home)>144)return false;
         var block=world().getBlockState(p).getBlock();
+        if(requestedOre!=null)return block==requestedOre;
         return kind==SurvivorProgression.Task.WOOD?(block==Blocks.LOG||block==Blocks.LOG2):
             kind==SurvivorProgression.Task.STONE?(block==Blocks.STONE||block==Blocks.COBBLESTONE):false;
     }
@@ -110,12 +115,12 @@ final class SurvivorWork {
         BlockPos stand=adjacent(p);
         if(stand==null||!reserve(p))return false;
         target=p.toImmutable();destination=stand;deadline=age+240;
-        memory().note(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",target,world().getTotalWorldTime());
+        if(requestedOre==null)memory().note(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",target,world().getTotalWorldTime());
         return true;
     }
     private void findResource(){
         if(target!=null)return;
-        if(scanCursor==0){
+        if(scanCursor==0&&requestedOre==null){
             BlockPos remembered=memory().recall(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",world().getTotalWorldTime(),12000);
             if(remembered!=null&&selectResource(remembered))return;
         }
@@ -154,13 +159,17 @@ final class SurvivorWork {
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
         if(technology.active()&&age>=nextTech){nextTech=age+80;if(technology.step(SurvivorCrafting.nearbyBench(bot))){memory().count(bot.getUniqueID(),"crafted");return;}}
+        if(industry&&age>=nextIndustry&&has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)){
+            nextIndustry=age+20;
+            if(industrialStep())return;
+        }
         SurvivorProgression.Task next=SurvivorProgression.choose(stock(),role);
         // If food is low, loot perception has priority; still allow basic tool progression.
         if(next==SurvivorProgression.Task.FOOD){
             SurvivorProgression.Stock s=stock();
             next=SurvivorProgression.choose(new SurvivorProgression.Stock(2,s.logs(),s.planks(),s.sticks(),s.stone(),s.bench(),s.pickaxe(),s.stonePickaxe(),s.axe(),s.sword(),s.blocks(),s.sheltered()),role);
         }
-        if(next!=task){clear();task=next;}
+        if(next!=task || requestedOre!=null){clear();requestedOre=null;task=next;}
         switch(task){
             case WOOD,STONE -> findResource();
             case PLANKS -> craft(Item.getItemFromBlock(Blocks.PLANKS),false);
@@ -173,6 +182,30 @@ final class SurvivorWork {
             case SHELTER -> {bot.fortify();shelterQueued=true;}
             default -> {destination=null;}
         }
+    }
+    private boolean industrialStep(){
+        if(has(Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE))return false;
+        Item ore=Item.getItemFromBlock(Blocks.IRON_ORE),furnace=Item.getItemFromBlock(Blocks.FURNACE);
+        if(count(Items.IRON_INGOT)>=3){
+            if(ensureBench())craft(Items.IRON_PICKAXE,true);
+            return true;
+        }
+        if(!bot.hasFurnaceStation()){
+            if(has(furnace)){bot.furnaceStation();return true;}
+            if(count(Item.getItemFromBlock(Blocks.COBBLESTONE))>=8){
+                if(ensureBench())craft(furnace,true);
+                return true;
+            }
+            return false;
+        }
+        if(!has(Items.COAL)){mineOre(Blocks.COAL_ORE);return true;}
+        if(!has(ore)){mineOre(Blocks.IRON_ORE);return true;}
+        if(!bot.furnaceBusy())bot.smelt(ore.getRegistryName());
+        return true;
+    }
+    private void mineOre(net.minecraft.block.Block ore){
+        if(requestedOre!=ore){clear();requestedOre=ore;task=SurvivorProgression.Task.STONE;}
+        findResource();
     }
     boolean act(){
         if(!enabled||target==null)return false;
@@ -190,6 +223,7 @@ final class SurvivorWork {
         }
         if(best>=0)bot.equipInventorySlot(best);
         else if(task==SurvivorProgression.Task.STONE){clear();return false;}
+        if(task==SurvivorProgression.Task.STONE&&!state.getBlock().canHarvestBlock(world(),target,bot)){clear();return false;}
         bot.faceBlock(target);bot.moveForward=0;bot.moveStrafing=0;
         if(age%5==0)bot.swingArm(EnumHand.MAIN_HAND);
         float delta=state.getPlayerRelativeBlockHardness(bot,world(),target);
