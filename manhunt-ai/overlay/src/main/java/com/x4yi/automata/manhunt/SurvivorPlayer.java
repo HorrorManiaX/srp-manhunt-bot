@@ -147,8 +147,6 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         this.foodRecovery=new SurvivorFood(this);
         this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
             @Override public void sendPacket(Packet<?> packet) { /* No remote client. */ }
-            @Override public void disconnect(net.minecraft.util.text.ITextComponent reason) { /* Never run the real-player logout path. */ }
-            @Override public void onDisconnect(net.minecraft.util.text.ITextComponent reason) { /* No authenticated session to remove. */ }
         };
         getEntityData().setBoolean("ManhuntAIPlayer", true);
         setGameType(GameType.SURVIVAL);
