@@ -1,0 +1,48 @@
+name: Manhunt AI CI
+on:
+  push:
+    branches: [manhunt-ai]
+    paths: ['manhunt-ai/**', '.github/workflows/manhunt-ai.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: X4yii/Automata
+          ref: 5bf94f646ff6cc0fb07b20c1067f9c393d451225
+          path: automata-upstream
+          persist-credentials: false
+      - name: Apply Manhunt overlay
+        run: python3 manhunt-ai/apply_overlay.py automata-upstream
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+      - name: Build and test
+        working-directory: automata-upstream
+        run: bash gradlew build --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Manhunt-AI-jars
+          path: automata-upstream/build/libs/*.jar
+          if-no-files-found: error
+      - name: Package complete source
+        if: always()
+        run: |
+          tar --exclude=.git --exclude=.gradle --exclude=build -czf manhunt-ai-source.tar.gz -C automata-upstream .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Manhunt-AI-source
+          path: manhunt-ai-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Manhunt-AI-test-reports
+          path: automata-upstream/build/reports/
+          if-no-files-found: ignore
