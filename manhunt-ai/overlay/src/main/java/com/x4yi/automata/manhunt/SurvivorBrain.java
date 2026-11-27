@@ -25,6 +25,6 @@ public final class SurvivorBrain {
     }
     /** Stagger idle perception, accelerate during combat or after a world event. */
     public static int scanInterval(boolean alert, boolean stressed) {
-        return stressed ? (alert ? 8 : 24) : (alert ? 4 : 10);
+        return stressed ? (alert ? 8 : 24) : (alert ? 2 : 10);
     }
 }
