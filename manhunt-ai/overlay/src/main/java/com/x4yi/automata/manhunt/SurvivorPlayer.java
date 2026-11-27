@@ -31,6 +31,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private final it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap routeFailures=new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap();
     private final SurvivorWork work;
     private final SurvivorFurnace furnace;
+    private final SurvivorSeason season;
+    private final SurvivorTurret autoTurret;
+    private final SurvivorVehicles vehicles;
     private final SurvivorLavaTrap lavaTrap;
     private final SurvivorDefenseStation defenseStation;
     private final SurvivorFood foodRecovery;
@@ -126,6 +129,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         this.home = pos;
         this.work=new SurvivorWork(this,pos);
         this.furnace=new SurvivorFurnace(this);
+        season=new SurvivorSeason(this);autoTurret=new SurvivorTurret(this);vehicles=new SurvivorVehicles(this);
         this.lavaTrap=new SurvivorLavaTrap(this);this.defenseStation=new SurvivorDefenseStation(this);
         this.foodRecovery=new SurvivorFood(this);
         this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
@@ -159,6 +163,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         return new net.minecraft.util.text.TextComponentString(getName()+" [ИИ]");
     }
     BlockPos homePosition(){return home;}
+    boolean seasonWork(int age){return season.plan(age);}
+    boolean turretWork(int age){return autoTurret.plan(age);}
+    boolean vehicleWork(int age){return vehicles.plan(age);}
+    boolean vehicleGoal(net.minecraft.util.ResourceLocation id){return vehicles.request(id);}
     void facePoint(net.minecraft.util.math.Vec3d p){lookAt(p.x,p.y,p.z);}
     boolean requestLava(BlockPos p){return lavaTrap.request(p,age);}
     boolean registerDefense(BlockPos p,net.minecraft.util.ResourceLocation ammo,EnumFacing side){return defenseStation.register(p,ammo,side,age);}
@@ -176,7 +184,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         nextVictoryChat=age+400;
         for(EntityPlayerMP p:getServer().getPlayerList().getPlayers())if(p.world==world&&p.getDistanceSq(this)<=256&&!ManhuntCompat.isHostile(p))p.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+getName()+": противник уничтожен. Проверяю окрестности."));
     }
-    public String activity() { return "order="+combatOrder+"/kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
+    public String activity() { return "order="+combatOrder+"/kills="+victories+"/"+activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus()+"/season="+season.status()+"/OMT="+autoTurret.status()+"/MCH="+vehicles.status(); }
     boolean hasFurnaceStation(){return furnace.validStation();}
     boolean furnaceBusy(){return furnace.active();}
     void industry(boolean enabled){work.industry(enabled);invalidateRoute();}
@@ -280,7 +288,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(++checked>48) break;
             if(item.isDead || item.getItem().isEmpty() || item.cannotPickup() || item.getOwner()!=null) continue;
             ItemStack stack=item.getItem();
-            if(!(stack.getItem() instanceof ItemFood || stack.getItem() instanceof net.minecraft.item.ItemSword || stack.getItem() instanceof ItemBlock || stack.getItem()==Items.COAL || stack.getItem()==Items.IRON_INGOT || stack.getItem() instanceof net.minecraft.item.ItemTool || stack.getItem() instanceof net.minecraft.item.ItemArmor)) continue;
+            if(!(stack.getItem() instanceof ItemFood || stack.getItem() instanceof net.minecraft.item.ItemSword || stack.getItem() instanceof ItemBlock || stack.getItem()==Items.COAL || stack.getItem()==Items.IRON_INGOT || stack.getItem() instanceof net.minecraft.item.ItemTool || stack.getItem() instanceof net.minecraft.item.ItemArmor || SurvivorSeason.useful(stack))) continue;
             double d=getDistanceSq(item);
             if(d<distance && canEntityBeSeen(item)) {loot=item;distance=d;}
         }
@@ -469,7 +477,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if (trace == null || !support.equals(trace.getBlockPos()) || trace.sideHit != side) continue;
             equipInventorySlot(slot); moveForward=0;moveStrafing=0;lookAt(hit.x,hit.y,hit.z);
             EnumActionResult result=interactionManager.processRightClickBlock(this, world, getHeldItemMainhand(), EnumHand.MAIN_HAND, support, side, (float)(hit.x-support.getX()), (float)(hit.y-support.getY()), (float)(hit.z-support.getZ()));
-            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal);placedBlocks++;buildGoal=null;buildApproach=null;invalidateRoute(); }
+            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal);autoTurret.placed(buildGoal);vehicles.placed(buildGoal);placedBlocks++;buildGoal=null;buildApproach=null;invalidateRoute(); }
             return;
         }
     }
@@ -517,6 +525,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
         if(helpCaller!=null&&(!helpCaller.isEntityAlive()||helpCaller.world!=world))clearHelp();
         BlockPos assistance=helpDestination();
+        if(assistance==null&&autonomousEnabled()&&target==null)assistance=SurvivorFinalBattle.rendezvous(this);
         BlockPos infrastructure=lavaTrap.destination()!=null?lavaTrap.destination():defenseStation.destination();
         if(action==SurvivorBrain.Action.PATROL&&assistance==null&&buildGoal==null&&!stressed)defenseStation.tick(age);
         if(action==SurvivorBrain.Action.PATROL && assistance==null && buildGoal==null&&!stressed&&furnace.active())furnace.tick(age);
