@@ -80,9 +80,6 @@ final class SurvivorSquad {
         }
     }
     private static void announce(SurvivorPlayer bot,String text){
-        SurvivorTelemetry.event("chat",bot,text);
-        for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())
-            if(p.world==bot.world&&p.getDistanceSq(bot)<=16*16&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(p))
-                p.sendMessage(new TextComponentString(bot.getName()+": "+text));
+        SurvivorService.INSTANCE.localSpeech(bot,16,text);
     }
 }
