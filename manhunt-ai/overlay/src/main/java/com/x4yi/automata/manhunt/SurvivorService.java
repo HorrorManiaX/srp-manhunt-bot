@@ -64,7 +64,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==1 && args[0].equals("parked")){
@@ -112,6 +112,13 @@ public final class SurvivorService extends CommandBase {
             if(args[2].equals("clear")){bot.clearTechGoal();return;}
             if(!bot.techGoal(new ResourceLocation(args[2])))throw new CommandException("Unknown or disallowed technology goal");
             sender.sendMessage(new TextComponentString("Goal queued; enable autonomous work with /manhuntai auto "+args[1]+" on"));return;
+        }
+        if(args.length==3 && args[0].equals("industry")){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null)throw new CommandException("AI survivor not found");
+            if(!args[2].equals("on")&&!args[2].equals("off"))throw new CommandException("Expected on/off");
+            bot.industry(args[2].equals("on"));
+            sender.sendMessage(new TextComponentString("Industrial progression "+args[2]+"; requires autonomous work enabled"));return;
         }
         if(args.length==3 && args[0].equals("auto")){
             SurvivorPlayer bot=bots.get(key(args[1]));
