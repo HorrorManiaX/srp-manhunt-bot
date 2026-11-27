@@ -138,7 +138,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | park <name> | resume <name> | parked | pause | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==1&&args[0].equals("rosterjson")){
@@ -188,6 +188,18 @@ public final class SurvivorService extends CommandBase {
         if(args.length==1 && args[0].equals("parked")){
             if(!(sender.getEntityWorld() instanceof WorldServer world))throw new CommandException("Server world required");
             sender.sendMessage(new TextComponentString("Parked in this dimension: "+SurvivorRoster.get(world).names()));return;
+        }
+        if(args.length==1 && args[0].equals("pause")){
+            population.configure(false,population.target());
+            int parked=0;
+            java.util.List<String> failed=new ArrayList<>();
+            for(SurvivorPlayer bot:new ArrayList<>(bots.values())){
+                try{if(park(server,bot)){population.suppress(bot.getName());parked++;}
+                    else failed.add(bot.getName());}
+                catch(RuntimeException|LinkageError e){failed.add(bot.getName());AutomataMod.LOGGER.warn("Could not safely park "+bot.getName(),e);}
+            }
+            sender.sendMessage(new TextComponentString("AI paused; saved and parked: "+parked+"; remaining active: "+bots.size()+(failed.isEmpty()?"":"; failed: "+String.join(", ",failed))));
+            return;
         }
         if(args.length==2 && args[0].equals("park")){
             SurvivorPlayer bot=bots.get(key(args[1]));
@@ -467,7 +479,21 @@ public final class SurvivorService extends CommandBase {
         if(!bots.isEmpty()){
             java.util.List<EntityPlayerMP> profiles=new ArrayList<>();
             for(SurvivorPlayer bot:bots.values())if(bot.isEntityAlive())profiles.add(bot);
-            if(!profiles.isEmpty())player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, profiles));
+            if(!profiles.isEmpty())try{
+                player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, profiles));
+            }catch(RuntimeException|LinkageError e){
+                AutomataMod.LOGGER.error("Agent profile synchronization failed for real player "+player.getName(),e);
+                population.configure(false,population.target());
+                for(SurvivorPlayer bot:new ArrayList<>(bots.values())){
+                    try{if(!park(server,bot))AutomataMod.LOGGER.warn("Agent remains active: "+bot.getName());}
+                    catch(RuntimeException|LinkageError failure){AutomataMod.LOGGER.error("Could not safely park "+bot.getName(),failure);}
+                }
+            }
+        }
+    }
+    @SubscribeEvent public void onLogout(PlayerEvent.PlayerLoggedOutEvent event){
+        if(event.player instanceof EntityPlayerMP player && !(player instanceof SurvivorPlayer) && !(player instanceof net.minecraftforge.common.util.FakePlayer)){
+            AutomataMod.LOGGER.info("Real player logout: {}; live AI: {}; dimension: {}; AI tick avg: {} ms",player.getName(),bots.size(),player.world.provider.getDimension(),meanAiMs);
         }
     }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
