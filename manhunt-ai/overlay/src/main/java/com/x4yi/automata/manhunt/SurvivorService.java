@@ -31,21 +31,32 @@ public final class SurvivorService extends CommandBase {
     private final SurvivorPopulation population=new SurvivorPopulation();
     private final SurvivorHelp assistance=new SurvivorHelp();
     private final SurvivorDialogue dialogue=new SurvivorDialogue();
-    private record ChatTurn(String botKey,int entityId,UUID sender,SurvivorChatPolicy.Side side,int due,int expiry,String message,String reply,SurvivorChatPolicy.Topic topic) {}
+    private record ChatTurn(String botKey,int entityId,UUID sender,SurvivorChatPolicy.Side side,int due,int expiry,String message,String reply,SurvivorChatPolicy.Topic topic,long requestId,boolean ambient) {}
     private record ChatMemory(String botKey,SurvivorChatPolicy.Side side,int tick,String message,String reply,SurvivorChatPolicy.Topic topic) {}
     private final java.util.ArrayDeque<ChatTurn> chatQueue=new java.util.ArrayDeque<>();
     private final Map<UUID,ChatMemory> chatMemory=new LinkedHashMap<>();
     private final Map<String,Integer> chatCooldown=new LinkedHashMap<>();
     private final Map<String,java.util.ArrayDeque<String>> chatRecent=new LinkedHashMap<>();
     private final Map<UUID,ChatTurn> modelPending=new LinkedHashMap<>();
-    private int nextPublicChat;
+    private int nextPublicChat,nextAmbientChat;
+    private long dialogueSequence;
     private static SurvivorChatPolicy.Side side(EntityPlayerMP p){
         if(com.x4yi.automata.compat.ManhuntCompat.isParasite(p))return SurvivorChatPolicy.Side.PARASITE;
+        if(p instanceof SurvivorPlayer)return SurvivorChatPolicy.Side.HUMAN;
         if(com.x4yi.automata.compat.ManhuntCompat.confirmedHuman(p))return SurvivorChatPolicy.Side.HUMAN;
         return SurvivorChatPolicy.Side.UNKNOWN;
     }
+    private EntityPlayerMP chatSender(ChatTurn turn,SurvivorPlayer bot){
+        if(bot==null)return null;
+        if(turn.ambient()){
+            for(SurvivorPlayer ally:bots.values())if(ally.getUniqueID().equals(turn.sender()))return ally;
+            return null;
+        }
+        return bot.getServer().getPlayerList().getPlayerByUUID(turn.sender());
+    }
     private boolean valid(ChatTurn turn,SurvivorPlayer bot,EntityPlayerMP player){
-        return bot!=null&&bot.isEntityAlive()&&bot.getEntityId()==turn.entityId()&&player!=null&&player.world==bot.world&&side(player)==turn.side()&&ticks<=turn.expiry();
+        return bot!=null&&bot.isEntityAlive()&&bot.getEntityId()==turn.entityId()&&player!=null&&player.isEntityAlive()&&player.world==bot.world&&side(player)==turn.side()&&ticks<=turn.expiry()
+            &&(!turn.ambient()||player instanceof SurvivorPlayer ally&&bot.calmForSupply()&&ally.calmForSupply()&&bot.getDistanceSq(ally)<=256);
     }
     private void emit(ChatTurn turn,SurvivorPlayer bot,String answer){
         answer=SurvivorDialogue.sanitize(answer);if(answer.isEmpty())return;
@@ -58,26 +69,40 @@ public final class SurvivorService extends CommandBase {
         var recent=chatRecent.computeIfAbsent(turn.botKey(),k->new java.util.ArrayDeque<>());
         recent.addLast(answer);while(recent.size()>8)recent.removeFirst();
         nextPublicChat=ticks+25;
+        if(bot.world instanceof WorldServer world)SurvivorMemory.get(world).rememberConversation(bot.getUniqueID(),turn.sender(),turn.side(),turn.topic());
+        if(turn.ambient()&&turn.message().isEmpty()&&chatSender(turn,bot) instanceof SurvivorPlayer ally){
+            queueAmbient(ally,bot,answer);
+        }
     }
     private void deliverDialogue(){
         for(int i=0;i<2;i++){
             SurvivorDialogue.Answer answer=dialogue.poll();if(answer==null)break;
             ChatTurn turn=modelPending.get(answer.senderId());
-            if(turn==null||!turn.botKey().equals(answer.botKey())||turn.entityId()!=answer.entityId())continue;
+            if(turn==null||!turn.botKey().equals(answer.botKey())||turn.entityId()!=answer.entityId()||turn.requestId()!=answer.requestId())continue;
             modelPending.remove(answer.senderId());
             SurvivorPlayer bot=bots.get(turn.botKey());
-            EntityPlayerMP player=bot==null?null:bot.getServer().getPlayerList().getPlayerByUUID(turn.sender());
+            EntityPlayerMP player=chatSender(turn,bot);
             if(valid(turn,bot,player)&&chatQueue.size()<16){
                 String line=answer.text();
                 if(line.isEmpty()||line.matches(".*\\d{2,}.*")||chatRecent.getOrDefault(turn.botKey(),new java.util.ArrayDeque<>()).contains(line))line=turn.reply();
-                chatQueue.addFirst(new ChatTurn(turn.botKey(),turn.entityId(),turn.sender(),turn.side(),ticks,turn.expiry(),turn.message(),line,turn.topic()));
+                chatQueue.addFirst(new ChatTurn(turn.botKey(),turn.entityId(),turn.sender(),turn.side(),Math.max(ticks,turn.due()),turn.expiry(),turn.message(),line,turn.topic(),turn.requestId(),turn.ambient()));
             }
         }
-        if(ticks%20==0){modelPending.values().removeIf(t->ticks>t.expiry());chatMemory.values().removeIf(m->ticks-m.tick()>2400);}
+        if(ticks%20==0){
+            var it=modelPending.values().iterator();
+            while(it.hasNext()){
+                ChatTurn t=it.next();
+                if(ticks>=t.expiry()-80){it.remove();if(chatQueue.size()<16)chatQueue.addLast(t);}
+            }
+            chatMemory.values().removeIf(m->ticks-m.tick()>2400);
+        }
         if(ticks<nextPublicChat||chatQueue.isEmpty())return;
-        ChatTurn turn=chatQueue.peekFirst();if(turn.due()>ticks)return;chatQueue.removeFirst();
+        ChatTurn turn=null;
+        var ready=chatQueue.iterator();
+        while(ready.hasNext()){ChatTurn candidate=ready.next();if(candidate.due()<=ticks){turn=candidate;ready.remove();break;}}
+        if(turn==null)return;
         SurvivorPlayer bot=bots.get(turn.botKey());
-        EntityPlayerMP player=bot==null?null:bot.getServer().getPlayerList().getPlayerByUUID(turn.sender());
+        EntityPlayerMP player=chatSender(turn,bot);
         if(!valid(turn,bot,player))return;
         emit(turn,bot,turn.reply());
     }
@@ -504,7 +529,7 @@ public final class SurvivorService extends CommandBase {
             if (owner != null) remove(owner, bot);
             else bot.cancelPlanning();
         }
-        bots.clear(); assistance.clear(); dialogue.clear(); chatQueue.clear(); chatMemory.clear(); chatCooldown.clear(); chatRecent.clear(); modelPending.clear(); nextPublicChat=0; squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
+        bots.clear(); assistance.clear(); dialogue.clear(); chatQueue.clear(); chatMemory.clear(); chatCooldown.clear(); chatRecent.clear(); modelPending.clear(); nextPublicChat=0; nextAmbientChat=0; squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     /** Vanilla clients resolve SPacketSpawnPlayer through the tab profile map.
      * PlayerLoggedInEvent is too late: world insertion can start entity tracking first. */
@@ -592,16 +617,42 @@ public final class SurvivorService extends CommandBase {
             chatRecent.get(botKey).pollFirst();
         }
         int delay=18+selected.getRNG().nextInt(43);
-        var turn=new ChatTurn(botKey,selected.getEntityId(),sender.getUniqueID(),faction,ticks+delay,ticks+360,msg,reply,topic);
-        // Optional local model only for open-ended conversation. Sensitive/identity/action topics use deterministic policy.
-        if((topic==SurvivorChatPolicy.Topic.CHAT||topic==SurvivorChatPolicy.Topic.QUESTION||topic==SurvivorChatPolicy.Topic.JOKE)&&faction==SurvivorChatPolicy.Side.HUMAN&&modelPending.size()<2){
-            String context="Собеседник "+sender.getName()+"; фракция "+faction+"; характер "+SurvivorPersonality.description(selected.personality());
-            String history=memory==null?"":"Предыдущее сообщение: "+memory.message()+"\nПредыдущий ответ: "+memory.reply()+"\n";
-            if(dialogue.offer(botKey,selected.getEntityId(),sender.getUniqueID(),context,history+"Новое сообщение: "+msg,reply)){
+        var turn=new ChatTurn(botKey,selected.getEntityId(),sender.getUniqueID(),faction,ticks+delay,ticks+400,msg,reply,topic,++dialogueSequence,false);
+        // Social replies may be generated for every faction. Identity, locations, inventory,
+        // combat facts and assistance remain deterministic and grounded in server state.
+        boolean social=switch(topic){case CHAT,QUESTION,JOKE,GREETING,FAREWELL,THANKS,YES,NO -> true;default -> false;};
+        if(social&&!stressed&&modelPending.size()<2){
+            String context="Собеседник "+sender.getName()+"; фракция "+faction+"; характер "+SurvivorPersonality.description(selected.personality())+"; сторона людей, отряд Купол";
+            if(selected.world instanceof WorldServer world)context+="; "+SurvivorMemory.get(world).recallConversation(selected.getUniqueID(),sender.getUniqueID(),faction);
+            String history=memory==null||!continued?"":"Предыдущее сообщение: "+memory.message()+"\nПредыдущий ответ: "+memory.reply()+"\n";
+            if(dialogue.offer(botKey,selected.getEntityId(),sender.getUniqueID(),turn.requestId(),context,history+"Новое сообщение: "+msg,reply)){
                 modelPending.put(sender.getUniqueID(),turn);return;
             }
         }
         chatQueue.addLast(turn);
+    }
+    private void queueAmbient(SurvivorPlayer speaker,SurvivorPlayer listener,String previous){
+        if(stressed||chatQueue.size()>=12||modelPending.size()>=2||modelPending.containsKey(listener.getUniqueID()))return;
+        String k=key(speaker.getName());
+        if(!speaker.calmForSupply()||!listener.calmForSupply()||speaker.world!=listener.world||speaker.getDistanceSq(listener)>256)return;
+        if(ticks<chatCooldown.getOrDefault(k,0))return;
+        boolean opening=previous.isEmpty();
+        String fallback=opening?listener.getName()+", как там, держишься?":SurvivorChatPolicy.answer(SurvivorChatPolicy.Topic.CHAT,SurvivorChatPolicy.Side.HUMAN,speaker.personality(),speaker.chatState(),"",speaker.getRNG());
+        var turn=new ChatTurn(k,speaker.getEntityId(),listener.getUniqueID(),SurvivorChatPolicy.Side.HUMAN,ticks+30,ticks+400,previous,fallback,SurvivorChatPolicy.Topic.CHAT,++dialogueSequence,true);
+        chatCooldown.put(k,ticks+160);
+        String context="Отряд Купол, союзник "+listener.getName()+"; характер "+SurvivorPersonality.description(speaker.personality())+"; оба сейчас вне боя.";
+        String prompt=opening?"Начни короткий естественный разговор с этим союзником, без обещаний или выдуманных событий.":"Ответь союзнику на его настоящую реплику: "+previous;
+        if(dialogue.offer(k,speaker.getEntityId(),listener.getUniqueID(),turn.requestId(),context,prompt,fallback))modelPending.put(listener.getUniqueID(),turn);
+        else chatQueue.addLast(turn);
+    }
+    private void ambientChat(){
+        if(ticks<nextAmbientChat||stressed||!chatQueue.isEmpty()||!modelPending.isEmpty())return;
+        nextAmbientChat=ticks+1200+java.util.concurrent.ThreadLocalRandom.current().nextInt(1201);
+        for(SurvivorPlayer a:bots.values())for(SurvivorPlayer b:bots.values()){
+            if(a==b||a.world!=b.world||!a.isEntityAlive()||!b.isEntityAlive()||a.getDistanceSq(b)>256||!a.calmForSupply()||!b.calmForSupply())continue;
+            if(ticks<chatCooldown.getOrDefault(key(a.getName()),0)||ticks<chatCooldown.getOrDefault(key(b.getName()),0))continue;
+            queueAmbient(a,b,"");return;
+        }
     }
     @SubscribeEvent public void onTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
@@ -629,6 +680,7 @@ public final class SurvivorService extends CommandBase {
         if(!stressed&&ticks%40==0&&(System.nanoTime()-start)<3_000_000L)try{assistance.tick(new ArrayList<>(bots.values()),ticks);}catch(RuntimeException|LinkageError ex){assistance.clear();for(SurvivorPlayer bot:bots.values())bot.clearHelp();AutomataMod.LOGGER.warn("AI help coordinator reset",ex);}
         if(!stressed&&ticks%200==0&&(System.nanoTime()-start)<2_000_000L)SurvivorSeason.pool(new ArrayList<>(bots.values()));
         if(!stressed&&ticks%100==0&&(System.nanoTime()-start)<2_000_000L)SurvivorSquad.coordinate(new ArrayList<>(bots.values()),ticks/100);
+        if(!stressed&&ticks%100==0&&(System.nanoTime()-start)<2_000_000L)ambientChat();
         meanAiMs=meanAiMs*.95+(System.nanoTime()-start)/1_000_000.0*.05;
     }
 }
