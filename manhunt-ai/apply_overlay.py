@@ -113,6 +113,11 @@ for f in java_root.rglob('*.java'):
     new=re.sub(r'(?m)^\\s*@JEIPlugin\\s*\\n','\\n',new)
     new=re.sub(r'(?m)^\\s*@Config\\(modid = AutomataMod.MOD_ID, name = AutomataMod.MOD_ID\\)\\s*\\n','\\n',new)
     if old!=new:f.write_text(new,encoding='utf-8')
+# Forge automatically discovers JSON recipes even without the original registry handlers.
+# These upstream recipes refer to unregistered Automata items and must not enter the server registry.
+recipes=target/'src/main/resources/assets/automata/recipes'
+if recipes.exists():
+    shutil.rmtree(recipes)
 # X4UI is used only to compile dormant upstream classes; it is not a runtime mod dependency.
 gradle=target/'build.gradle'
 s=gradle.read_text(encoding='utf-8')

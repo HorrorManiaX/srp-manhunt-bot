@@ -361,6 +361,13 @@ public final class SurvivorService extends CommandBase {
     private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString("[Купол] "+message));}
     private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{
         String name=bot.getName();
+        // Validate before world insertion: vanilla can replace an existing entity on a UUID collision.
+        if(!name.matches("[A-Za-z0-9_]{1,16}") || bot.getUniqueID()==null || bots.containsKey(key(name)) || server.getPlayerList().getPlayerByUsername(name)!=null || server.getPlayerList().getPlayerByUUID(bot.getUniqueID())!=null){
+            bot.cancelPlanning();throw new CommandException("Invalid or conflicting agent profile");
+        }
+        for(WorldServer dimension:server.worlds)if(dimension!=null && dimension.getEntityFromUuid(bot.getUniqueID())!=null){
+            bot.cancelPlanning();throw new CommandException("Agent UUID already exists in a loaded world");
+        }
         if(!SurvivorFaction.human(bot)){bot.cancelPlanning();throw new CommandException("Cotesia HUMAN selection failed; AI not activated");}
         broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
         try {
@@ -446,11 +453,25 @@ public final class SurvivorService extends CommandBase {
         }
         bots.clear(); assistance.clear(); dialogue.clear(); squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
+    /** Vanilla clients resolve SPacketSpawnPlayer through the tab profile map.
+     * PlayerLoggedInEvent is too late: world insertion can start entity tracking first. */
+    @SubscribeEvent(priority=net.minecraftforge.fml.common.eventhandler.EventPriority.HIGHEST, receiveCanceled=false)
+    public void beforePlayerWorldJoin(net.minecraftforge.event.entity.EntityJoinWorldEvent event){
+        if(event.getWorld().isRemote || !(event.getEntity() instanceof EntityPlayerMP player) || player instanceof SurvivorPlayer || player instanceof net.minecraftforge.common.util.FakePlayer || player.connection==null)return;
+        MinecraftServer server=player.getServer();if(server==null)return;
+        for(SurvivorPlayer bot:new ArrayList<>(bots.values())){
+            if(bot.getUniqueID().equals(player.getUniqueID()) || bot.getName().equalsIgnoreCase(player.getName())){
+                population.suppress(bot.getName());remove(server,bot);
+            }
+        }
+        if(!bots.isEmpty()){
+            java.util.List<EntityPlayerMP> profiles=new ArrayList<>();
+            for(SurvivorPlayer bot:bots.values())if(bot.isEntityAlive())profiles.add(bot);
+            if(!profiles.isEmpty())player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, profiles));
+        }
+    }
     @SubscribeEvent public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.player instanceof EntityPlayerMP player && player.connection != null) {
-            SurvivorPlayer conflict=bots.get(key(player.getName()));
-            if(conflict!=null&&conflict.getName().equalsIgnoreCase(player.getName())){population.suppress(conflict.getName());remove(player.getServer(),conflict);}
-            for (SurvivorPlayer bot : bots.values()) player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
+        if (event.player instanceof EntityPlayerMP player && !(player instanceof SurvivorPlayer) && !(player instanceof net.minecraftforge.common.util.FakePlayer) && player.connection != null) {
             player.sendMessage(new TextComponentString("Купол — отряд под управлением ИИ. Состав участников: /participants"));
         }
     }
