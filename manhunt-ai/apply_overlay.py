@@ -43,7 +43,7 @@ patch('navigation/PathfindingSettings.java', [
 patch('navigation/BlockCellType.java', [('    private BlockCellType()', '    public static final byte LADDER = 8;\n\n    private BlockCellType()')])
 patch('navigation/PathNodeAction.java', [('    private PathNodeAction()', '    public static final byte CLIMB = 9;\n\n    private PathNodeAction()')])
 patch('movement/CellClassifier.java', [
-    ('        Material mat = state.getMaterial();','        if (state.getBlock() instanceof net.minecraft.block.BlockLadder) return BlockCellType.LADDER;\n        Material mat = state.getMaterial();'),
+    ('    public static byte classify(World world, BlockPos pos, IBlockState state) {','    public static byte classify(World world, BlockPos pos, IBlockState state) {\n        if (state.getBlock() instanceof net.minecraft.block.BlockLadder) return BlockCellType.LADDER;'),
     ('return cell == BlockCellType.AIR || cell == BlockCellType.WATER;', 'return cell == BlockCellType.AIR || cell == BlockCellType.WATER || cell == BlockCellType.LADDER;')
 ])
 patch('navigation/INavigationWorldView.java', [
