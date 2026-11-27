@@ -335,14 +335,15 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if(s.isEmpty()||!(s.getItem() instanceof net.minecraft.item.ItemArmor armor)||s.getItem().getRegistryName()==null||!"minecraft".equals(s.getItem().getRegistryName().getNamespace()))continue;
             var slot=armor.armorType;
             ItemStack old=getItemStackFromSlot(slot);
-            if(!old.isEmpty() && (!(old.getItem() instanceof net.minecraft.item.ItemArmor worn)||worn.damageReduceAmount>=armor.damageReduceAmount))continue;
+            if(!old.isEmpty() && (!(old.getItem() instanceof net.minecraft.item.ItemArmor worn)||worn.damageReduceAmount>armor.damageReduceAmount||worn.damageReduceAmount==armor.damageReduceAmount&&old.getItemDamage()<=s.getItemDamage()))continue;
             inventory.setInventorySlotContents(i,old);
             setItemStackToSlot(slot,s);inventory.markDirty();
         }
-        if(getHeldItemOffhand().isEmpty())for(int i=0;i<36;i++){
+        if(getHeldItemOffhand().isEmpty()||getHeldItemOffhand().getItem()==Items.SHIELD&&getHeldItemOffhand().getItemDamage()>getHeldItemOffhand().getMaxDamage()*.85)for(int i=0;i<36;i++){
             ItemStack shield=inventory.getStackInSlot(i);
             if(shield.getItem()!=Items.SHIELD||shield.isEmpty())continue;
-            inventory.setInventorySlotContents(i,ItemStack.EMPTY);
+            if(!getHeldItemOffhand().isEmpty()&&shield.getItemDamage()>=getHeldItemOffhand().getItemDamage())continue;
+            inventory.setInventorySlotContents(i,getHeldItemOffhand());
             setHeldItem(EnumHand.OFF_HAND,shield);inventory.markDirty();break;
         }
     }
