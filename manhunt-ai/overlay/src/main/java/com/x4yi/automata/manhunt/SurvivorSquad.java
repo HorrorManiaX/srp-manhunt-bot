@@ -34,10 +34,12 @@ final class SurvivorSquad {
     }
     static void coordinate(List<SurvivorPlayer> bots,int offset){
         if(bots.size()<2)return;
+        long deadline=System.nanoTime()+1_000_000L;
         // Rotate the starting worker; at most one transfer per 100 server ticks.
         for(int j=0;j<bots.size();j++){
             SurvivorPlayer to=bots.get(Math.floorMod(offset+j,bots.size()));
             for(SurvivorPlayer from:bots){
+                if(System.nanoTime()>=deadline)return;
                 if(!sameTeam(from,to))continue;
                 for(var r:SurvivorSupplyPolicy.Resource.values()){
                     int amount=SurvivorSupplyPolicy.transfer(r,from.role(),to.role(),count(from,r),count(to,r));
@@ -51,8 +53,8 @@ final class SurvivorSquad {
                         to.inventory.addItemStackToInventory(copy);
                         int moved=n-copy.getCount();
                         if(moved<=0)continue;
-                        s.shrink(moved);from.inventory.markDirty();to.inventory.markDirty();
                         String name=s.getDisplayName();
+                        s.shrink(moved);from.inventory.markDirty();to.inventory.markDirty();
                         String msg=SurvivorPersonality.share(from.personality(),moved,name,to.getName());
                         announce(from,msg);
                         announce(to,SurvivorPersonality.acknowledge(to.personality(),from.getName()));
