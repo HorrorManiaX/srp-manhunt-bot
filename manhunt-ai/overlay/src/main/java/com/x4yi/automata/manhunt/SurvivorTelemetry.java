@@ -16,13 +16,13 @@ final class SurvivorTelemetry {
         AutomataMod.LOGGER.info("MANHUNT_AI_EVENT "+data.toString());
         if(!player.getName().matches("[A-Za-z0-9_]{1,16}"))return;
         String line=switch(type){
-            case "join" -> "ИИ-выживший присоединился к миру.";
-            case "leave" -> "ИИ-выживший покинул мир.";
+            case "join" -> "Присоединился к миру.";
+            case "leave" -> "Покинул мир.";
             case "chat" -> body;
             case "death" -> "Погиб: "+body;
             case "kill" -> "Уничтожил противника: "+body;
             default -> "";
         };
-        if(!line.isEmpty())AutomataMod.LOGGER.info("<{}> [ИИ] {}",player.getName(),line);
+        if(!line.isEmpty())AutomataMod.LOGGER.info("<{}> [Купол] {}",player.getName(),line);
     }
 }
