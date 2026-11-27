@@ -107,7 +107,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==2 && args[0].equals("population")){
@@ -115,6 +115,19 @@ public final class SurvivorService extends CommandBase {
             else if(args[1].equals("on"))population.configure(true,population.target()==0?4:population.target());
             else {int count=parseInt(args[1],0,MAX);population.configure(count>0,count);}
             sender.sendMessage(new TextComponentString("Automatic AI population: "+population.enabled()+" / target "+population.target()));return;
+        }
+        if((args.length==5&&args[0].equals("lava"))||(args.length==7&&args[0].equals("defense"))||(args.length==3&&args[0].equals("defense")&&args[2].equals("clear"))){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null||sender.getEntityWorld()!=bot.world)throw new CommandException("AI must be in the same dimension");
+            if(args.length==3){bot.clearDefense();sender.sendMessage(new TextComponentString("Defense service cleared"));return;}
+            BlockPos pos=parseBlockPos(sender,args,2,false);
+            if(args[0].equals("lava")){
+                if(!bot.requestLava(pos))throw new CommandException("Requires a carried lava bucket, contained stone basin, safe area and permission");
+            }else{
+                net.minecraft.util.EnumFacing face=net.minecraft.util.EnumFacing.byName(args[6].toLowerCase(java.util.Locale.ROOT));
+                if(face==null||!bot.registerDefense(pos,new ResourceLocation(args[5]),face))throw new CommandException("Requires a preconfigured OMT base, accepted sided inventory, valid ammo ID and permission");
+            }
+            sender.sendMessage(new TextComponentString("Infrastructure job queued; normal game rules apply"));return;
         }
         if(args.length==2 && args[0].equals("squadbuild")){
             SurvivorPlayer leader=bots.get(key(args[1]));
@@ -219,7 +232,7 @@ public final class SurvivorService extends CommandBase {
         if (args.length == 1 && args[0].equals("list")) {
             sender.sendMessage(new TextComponentString("AI survivors: " + bots.size() + "/" + MAX
                 + " | population="+population.enabled()+"/"+population.target()+" | AI avg " + String.format(java.util.Locale.ROOT,"%.2f",meanAiMs) + " ms | tick interval " + String.format(java.util.Locale.ROOT,"%.1f",meanTickMs) + " ms | degraded=" + stressed));
-            for (SurvivorPlayer bot : bots.values()) sender.sendMessage(new TextComponentString(bot.getName() + " " + bot.activity() + " HP=" + bot.getHealth()));
+            for (SurvivorPlayer bot : bots.values()) sender.sendMessage(new TextComponentString(bot.getName() + " " + bot.activity() + " HP=" + bot.getHealth()+" "+bot.infrastructureStatus()));
             return;
         }
         if (args.length == 1 && args[0].equals("clear")) { population.configure(false,population.target());clear(server); return; }
