@@ -65,7 +65,7 @@ final class SurvivorPopulation {
                 if(service.parkedElsewhere(server,k))continue;
                 BlockPos site=pickSite(world,service);
                 if(site==null)break;
-                if(service.autoSpawn(server,world,full,site)){camp=site;success();return;}
+                if(service.autoSpawn(server,world,full,site)){if(camp==null)camp=site;success();return;}
             }catch(Exception | LinkageError ex){
                 cooldown.put(k,tick+6000);
                 AutomataMod.LOGGER.warn("Manhunt AI population candidate failed: "+full,ex);
@@ -77,17 +77,18 @@ final class SurvivorPopulation {
     private void success(){failures=0;nextJoin=tick+240;}
     private BlockPos pickSite(WorldServer world,SurvivorService service){
         BlockPos origin=camp!=null?camp:service.overworldCamp(world);
+        if(origin!=null)camp=origin;
         if(origin==null)origin=world.getSpawnPoint();
         // Stay within loaded chunks; try a small sample each pass.
         for(int i=0;i<24;i++){
             int k=sample++ & 255;
-            int r=camp!=null?4+(k/16)%5:24+(k/16)*2;
+            int r=camp!=null?6+(k/16)%9:24+(k/16)*2;
             double a=(k%16)*Math.PI/8;
             BlockPos column=origin.add(Math.round(Math.cos(a)*r),0,Math.round(Math.sin(a)*r));
             if(!world.isBlockLoaded(column))continue;
             int y=world.getHeight(column).getY();
             BlockPos p=new BlockPos(column.getX(),y,column.getZ());
-            if(y<2||y>253||!SurvivorService.standable(world,p)||!world.getWorldBorder().contains(p)||service.occupied(world,p))continue;
+            if(y<2||y>253||!SurvivorService.standable(world,p)||!world.getWorldBorder().contains(p)||service.occupied(world,p)||service.homeTooClose(world,p))continue;
             if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(12),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
             if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(3)).isEmpty())continue;
             return p;
