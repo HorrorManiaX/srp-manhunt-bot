@@ -29,6 +29,7 @@ import net.minecraft.world.WorldServer;
 public final class SurvivorPlayer extends EntityPlayerMP {
     private final BlockPos home;
     private final SurvivorWork work;
+    private final SurvivorFurnace furnace;
     private int reloadUntil, nextReload;
     private AtomicBoolean cancelled = new AtomicBoolean();
     private CompletableFuture<PathResult> pending;
@@ -53,6 +54,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         super(server, world, profile, new PlayerInteractionManager(world));
         this.home = pos;
         this.work=new SurvivorWork(this,pos);
+        this.furnace=new SurvivorFurnace(this);
         this.connection = new NetHandlerPlayServer(server, new NetworkManager(EnumPacketDirection.SERVERBOUND), this) {
             @Override public void sendPacket(Packet<?> packet) { /* No remote client. */ }
         };
@@ -66,7 +68,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     BlockPos homePosition(){return home;}
     boolean autonomousEnabled(){return work.isEnabled();}
     String technologyGoalId(){return work.goalId();}
-    public String activity() { return activity+"/"+work.status(); }
+    public String activity() { return activity+"/"+work.status()+"/furnace="+furnace.status(); }
+    boolean smelt(net.minecraft.util.ResourceLocation id){return furnace.request(id);}
+    boolean furnaceStation(){return buildGoal==null&&furnace.queueStation();}
     void autonomous(boolean enable){work.enabled(enable);invalidateRoute();}
     boolean techGoal(net.minecraft.util.ResourceLocation id){return work.goal(id);}
     void clearTechGoal(){work.clearGoal();}
@@ -229,7 +233,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if (trace == null || !support.equals(trace.getBlockPos()) || trace.sideHit != side) continue;
             equipInventorySlot(slot); lookAt(hit.x,hit.y,hit.z);
             EnumActionResult result=interactionManager.processRightClickBlock(this, world, getHeldItemMainhand(), EnumHand.MAIN_HAND, support, side, (float)(hit.x-support.getX()), (float)(hit.y-support.getY()), (float)(hit.z-support.getZ()));
-            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); buildGoal=null; }
+            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal); buildGoal=null; }
             return;
         }
     }
@@ -260,9 +264,11 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         boolean retreat=action==SurvivorBrain.Action.RETREAT || action==SurvivorBrain.Action.EVADE;
         activity=retreat?"retreat":target!=null?"combat":action==SurvivorBrain.Action.BUILD?"build":action==SurvivorBrain.Action.SCAVENGE?"scavenge":action==SurvivorBrain.Action.EAT?"eat":"patrol";
         if(action!=previousAction) {invalidateRoute();escapeGoal=null;previousAction=action;work.interrupt();}
-        if(action==SurvivorBrain.Action.PATROL && buildGoal==null)work.plan(stressed);
+        if(action==SurvivorBrain.Action.PATROL && buildGoal==null&&!stressed&&furnace.active())furnace.tick(age);
+        if(action==SurvivorBrain.Action.PATROL && buildGoal==null && (!furnace.active()||furnace.destination()==null))work.plan(stressed);
         else work.interrupt();
-        if(action==SurvivorBrain.Action.PATROL && work.destination()!=null && !work.destination().equals(plannedGoal) && pending==null)nextPlan=0;
+        BlockPos jobGoal=furnace.active()&&furnace.destination()!=null?furnace.destination():work.destination();
+        if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && !jobGoal.equals(plannedGoal) && pending==null)nextPlan=0;
         if(action==SurvivorBrain.Action.PATROL && gunSlot<0 && age>=nextReload && !stressed){
             nextReload=age+100;
             int reload=SurvivorWeapons.reload(this);
@@ -281,7 +287,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         if (age >= nextPlan && pending == null && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
             nextPlan=age+(stressed?60:retreat?15:30)+rand.nextInt(10);
-            BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?buildGoal:action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():work.destination()!=null?work.destination():patrolGoal();
+            BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?buildGoal:action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():jobGoal!=null?jobGoal:patrolGoal();
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
@@ -313,7 +319,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if (isHandActive() && !(action==SurvivorBrain.Action.MELEE && getActiveHand()==EnumHand.OFF_HAND && age<nextAttack)) stopActiveHand();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
             if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
-            if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed)work.act();
+            if(action==SurvivorBrain.Action.PATROL && buildGoal==null && !stressed && (!furnace.active()||furnace.destination()==null))work.act();
         }
         onUpdateEntity();
     }
