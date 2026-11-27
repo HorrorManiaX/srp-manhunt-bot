@@ -37,3 +37,11 @@ New modules: SurvivorProgression (six stable role labels and deterministic needs
 - Actual Clans container-interaction API signature verified with javap on the supplied 2.1.9 JAR. Runtime permission and machine behavior still require integration testing.
 - Optional local dialogue: install and run Ollama separately, set the server process environment variable `MANHUNT_AI_OLLAMA_MODEL` to an installed model name. Only directly addressed messages (`@AI_name ...`) are sent to loopback 127.0.0.1:11434. Tell players about this processing before enabling. Single worker, bounded queue, request timeout, fallback replies; no model-generated game commands, no external API, no fake human identity. Model output can still be inaccurate and is not used for gameplay decisions. Disabled unless the variable is set.
 - CI now supports a draft PR for build visibility and cancels superseded runs on the same ref. The full Gradle build has not been verified; no production-ready binary is claimed.
+
+## Version 0.6 — Collective construction (experimental)
+
+- `/manhuntai squadbuild <leader>` distributes a 5x5 two-level perimeter among up to six nearby AI agents with nearby home positions. The entrance is left open. Each worker handles both levels of its assigned columns; 30 blocks total. Requires real supplies and permissions. This is a wall plan, not a roofed complete base. Placement success depends on terrain, visibility, pathfinding and materials.
+- Construction uses a standable adjacent approach instead of navigating to the target block itself; it rejects self-intersecting placement and reports placed/skipped/queued counts in activity status.
+- Furnace jobs reuse residual heat and their own previously inserted coal. Stalled jobs expire without deleting materials in the world.
+- Standalone blueprint tests: all 12 partition scenarios passed locally. CI includes this test suite.
+- CI fixes: full upstream git history and tags for Cleanroom versioning; use non-generic Forge 1.12.2 IShapedRecipe. Run 54 reached Java compilation and reported two instances of that interface error. Fixed in source; full build pending confirmation.
