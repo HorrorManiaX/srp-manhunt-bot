@@ -18,6 +18,7 @@ final class SurvivorCrafting {
     private static List<ResourceLocation> basics;
     private static final java.util.Map<Item,List<ResourceLocation>> recipes=new java.util.HashMap<>();
     private static boolean indexed;
+    static List<ResourceLocation> recipesFor(Item item){index();return recipes.getOrDefault(item,java.util.Collections.emptyList());}
     private static void index() {
         if(indexed)return;
         for(IRecipe r:ForgeRegistries.RECIPES.getValuesCollection()){
@@ -73,7 +74,7 @@ final class SurvivorCrafting {
     static boolean craft(SurvivorPlayer bot, ResourceLocation id) {
         return craft(bot,id,false);
     }
-    private static boolean craft(SurvivorPlayer bot,ResourceLocation id,boolean table) {
+    static boolean craft(SurvivorPlayer bot,ResourceLocation id,boolean table) {
         IRecipe r = ForgeRegistries.RECIPES.getValue(id);
         if (r == null || r.isDynamic()) return false;
         List<Ingredient> ingredients = r.getIngredients();
