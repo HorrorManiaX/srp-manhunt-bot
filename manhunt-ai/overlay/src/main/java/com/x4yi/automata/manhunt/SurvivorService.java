@@ -38,6 +38,9 @@ public final class SurvivorService extends CommandBase {
     private final Map<String,Integer> chatCooldown=new LinkedHashMap<>();
     private final Map<String,java.util.ArrayDeque<String>> chatRecent=new LinkedHashMap<>();
     private final Map<UUID,ChatTurn> modelPending=new LinkedHashMap<>();
+    private final SurvivorSpeechPolicy speech=new SurvivorSpeechPolicy();
+    private record LocalTurn(SurvivorPlayer bot,int expiry,double range,String[] fallback,boolean combat){}
+    private final Map<Long,LocalTurn> localPending=new LinkedHashMap<>();
     private int nextPublicChat,nextAmbientChat;
     private long dialogueSequence;
     private static SurvivorChatPolicy.Side side(EntityPlayerMP p){
@@ -59,7 +62,7 @@ public final class SurvivorService extends CommandBase {
             &&(!turn.ambient()||player instanceof SurvivorPlayer ally&&bot.calmForSupply()&&ally.calmForSupply()&&bot.getDistanceSq(ally)<=256);
     }
     private void emit(ChatTurn turn,SurvivorPlayer bot,String answer){
-        answer=SurvivorDialogue.sanitize(answer);if(answer.isEmpty())return;
+        answer=SurvivorDialogue.sanitize(answer);if(answer.isEmpty()||!speech.accept(answer))return;
         SurvivorTelemetry.event("chat",bot,answer);
         // Public chat, same audience as ServerChatEvent. No tactical secrets or coordinates in replies.
         TextComponentString line=new TextComponentString("<"+bot.getName()+"> "+answer);
@@ -77,6 +80,15 @@ public final class SurvivorService extends CommandBase {
     private void deliverDialogue(){
         for(int i=0;i<2;i++){
             SurvivorDialogue.Answer answer=dialogue.poll();if(answer==null)break;
+            LocalTurn local=localPending.remove(answer.requestId());
+            if(local!=null){
+                if(local.bot().getEntityId()==answer.entityId()&&ticks<=local.expiry()&&(!local.combat()||local.bot().visibleEnemy()!=null)){
+                    String line=answer.text();
+                    if(line.isEmpty()||line.matches(".*\\d{2,}.*")||!localSpeech(local.bot(),local.range(),line))
+                        localSpeech(local.bot(),local.range(),local.fallback());
+                }
+                continue;
+            }
             ChatTurn turn=modelPending.get(answer.senderId());
             if(turn==null||!turn.botKey().equals(answer.botKey())||turn.entityId()!=answer.entityId()||turn.requestId()!=answer.requestId())continue;
             modelPending.remove(answer.senderId());
@@ -95,6 +107,11 @@ public final class SurvivorService extends CommandBase {
                 if(ticks>=t.expiry()-80){it.remove();if(chatQueue.size()<16)chatQueue.addLast(t);}
             }
             chatMemory.values().removeIf(m->ticks-m.tick()>2400);
+            var locals=localPending.values().iterator();
+            while(locals.hasNext()){
+                LocalTurn t=locals.next();
+                if(ticks>=t.expiry()){locals.remove();if(!t.combat()||t.bot().visibleEnemy()!=null)localSpeech(t.bot(),t.range(),t.fallback());}
+            }
         }
         if(ticks<nextPublicChat||chatQueue.isEmpty())return;
         ChatTurn turn=null;
@@ -138,36 +155,69 @@ public final class SurvivorService extends CommandBase {
         }
         return support;
     }
+    private boolean localAudience(SurvivorPlayer bot,double range){
+        if(bot==null||!bot.isEntityAlive()||bot.getServer()==null||bots.get(key(bot.getName()))!=bot)return false;
+        for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())
+            if(!(p instanceof SurvivorPlayer)&&!(p instanceof net.minecraftforge.common.util.FakePlayer)&&p.isEntityAlive()&&p.world==bot.world&&p.getDistanceSq(bot)<=range*range&&side(p)==SurvivorChatPolicy.Side.HUMAN)return true;
+        return false;
+    }
+    boolean localSpeech(SurvivorPlayer bot,double range,String... options){
+        if(options.length==0||!localAudience(bot,range)||!speech.localReady(key(bot.getName()),ticks))return false;
+        int start=bot.getRNG().nextInt(options.length);
+        for(int i=0;i<options.length;i++){
+            String line=SurvivorDialogue.sanitize(options[(start+i)%options.length]);
+            if(!speech.accept(line))continue;
+            speech.localSent(key(bot.getName()),ticks);
+            SurvivorTelemetry.event("chat",bot,line);
+            for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())
+                if(!(p instanceof SurvivorPlayer)&&!(p instanceof net.minecraftforge.common.util.FakePlayer)&&p.isEntityAlive()&&p.world==bot.world&&p.getDistanceSq(bot)<=range*range&&side(p)==SurvivorChatPolicy.Side.HUMAN)
+                    p.sendMessage(new TextComponentString(bot.getName()+": "+line));
+            return true;
+        }
+        return false;
+    }
+    private void eventSpeech(SurvivorPlayer bot,double range,boolean combat,String fact,String... fallback){
+        if(!localAudience(bot,range)||!speech.localReady(key(bot.getName()),ticks)||!localPending.isEmpty())return;
+        String context="Боец Купола "+bot.getName()+"; характер "+SurvivorPersonality.description(bot.personality())+"; подтвержденное событие: "+fact;
+        long id=++dialogueSequence;
+        if(!stressed&&modelPending.isEmpty()&&dialogue.offer(key(bot.getName()),bot.getEntityId(),bot.getUniqueID(),id,context,
+            "Одна живая короткая реакция на событие. Не придумывай детали. Не повторяй ни одну из предыдущих реплик: "+speech.context(),"")){
+            localPending.put(id,new LocalTurn(bot,ticks+180,range,fallback,combat));
+        }else localSpeech(bot,range,fallback);
+    }
     void reportOrder(SurvivorPlayer bot,SurvivorCombatPolicy.Order order){
-        String line=switch(order){
-            case ENGAGE -> new String[]{"вывозим, давим вместе","давай вдвоем, щас дожмем","вместе его, не разбегайтесь","есть шанс, заходим"}[bot.getRNG().nextInt(4)];
-            case COVER -> new String[]{"прикрою, не лезь близко","я с расстояния, держись","давай аккуратно, прикрываю","не подставляйся, я рядом"}[bot.getRNG().nextInt(4)];
-            case WITHDRAW -> new String[]{"бля не вывозим, отходим","сука отходим, живее","не лезьте, нас сейчас снесут","назад назад, не наш бой"}[bot.getRNG().nextInt(4)];
-        };
-        SurvivorTelemetry.event("chat",bot,line);
-        for(EntityPlayerMP human:bot.getServer().getPlayerList().getPlayers())
-            if(human.world==bot.world&&human.getDistanceSq(bot)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
-                human.sendMessage(new TextComponentString(bot.getName()+": "+line));
+        if(!speech.localReady(key(bot.getName()),ticks)||!localAudience(bot,32))return;
+        if(!speech.contact("order:"+bot.getName(),ticks))return;
+        switch(order){
+            case ENGAGE -> eventSpeech(bot,32,true,"решил атаковать вместе с союзниками","давайте вместе","есть шанс, заходим","вдвоем проще будет","ну че, попробуем");
+            case COVER -> eventSpeech(bot,32,true,"решил вести бой с расстояния","держитесь подальше от него","близко не надо","с дистанции проще","не подставляйтесь");
+            case WITHDRAW -> eventSpeech(bot,32,true,"решил отойти из-за опасности","не, надо отходить","бля, не вывожу","назад, парни","лучше отступить сейчас");
+        }
+    }
+    void reportVictory(SurvivorPlayer bot){
+        eventSpeech(bot,16,false,"действительно уничтожил противника","одного снял","фух, минус один","с этим разобрался","ну хоть этот упал","готов, больше не встает","так, один есть");
     }
     void observedThreat(SurvivorPlayer observer,net.minecraft.entity.EntityLivingBase enemy){
         if(enemy==null||enemy.world!=observer.world||!enemy.isEntityAlive()||!com.x4yi.automata.compat.ManhuntCompat.isHostile(enemy)||!observer.canEntityBeSeen(enemy))return;
         long now=observer.world.getTotalWorldTime();
         String key=observer.world.provider.getDimension()+":"+enemy.getUniqueID();
         Long last=squadMessages.get(key);
-        if(last!=null&&now-last<160)return;
-        if(squadMessages.size()>=64)squadMessages.clear();
-        squadMessages.put(key,now);
-        boolean vagrant=enemy instanceof net.minecraft.entity.player.EntityPlayer;
-        String[] lines=vagrant?new String[]{"БЛЯТЬ ТУТ ВАГРАНТ, ЕБАШЬ ПО НЕМУ ЕСЛИ ВЫВОЗИМ!","ВАГРАНТ! Братаны, вместе его, по одному не лезьте!","СУКА ВАГРАНТ, держите дистанцию, прикройте!"}:new String[]{"Паразиты рядом, прикройте меня!","Бля, опять паразиты. Держим строй!","Зараженные впереди, не разбегайтесь!"};
-        String line=lines[observer.getRNG().nextInt(lines.length)];
-        String warning=SurvivorParasiteTactics.warning(enemy);if(!warning.isEmpty()&&observer.getRNG().nextBoolean())line+=" "+(SurvivorParasiteTactics.heavy(enemy)?"не лезьте в мили":warning);
-        if(vagrant&&SurvivorContacts.alias(enemy.getName()).equals("Vagrantik"))line="Проповедник (Vagrantik) на контакте! "+line;
-        SurvivorTelemetry.event("chat",observer,line);
-        for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
-        for(EntityPlayerMP human:observer.getServer().getPlayerList().getPlayers()){
-            if(human.world!=observer.world||human.getDistanceSq(observer)>48*48||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
-            human.sendMessage(new TextComponentString(observer.getName()+": "+line));
+        if(last==null||now-last>=160){
+            squadMessages.put(key,now);
+            while(squadMessages.size()>64)squadMessages.remove(squadMessages.keySet().iterator().next());
+            for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
         }
+        if(!localAudience(observer,48))return;
+        boolean vagrant=enemy instanceof net.minecraft.entity.player.EntityPlayer;
+        boolean heavy=SurvivorParasiteTactics.noMelee(enemy);
+        String group="threat:"+observer.world.provider.getDimension()+":"+(vagrant?"vagrant":heavy?"heavy":"ordinary");
+        if(!speech.contact(group,ticks))return;
+        if(vagrant){
+            String alias=SurvivorContacts.alias(enemy.getName());
+            if(alias.equals("Vagrantik"))eventSpeech(observer,48,true,"заметил вагранта Проповедника (Vagrantik)","о, Проповедник тут","Vagrantik на контакте","бля, это же Проповедник");
+            else eventSpeech(observer,48,true,"заметил вражеского вагранта","вагрант тут","о бля, вагрант","парни, осторожно, вагрант","вижу одного из них");
+        }else if(heavy)eventSpeech(observer,48,true,"заметил опасного паразита, ближний бой нежелателен","не подходите к этой твари","бля, держите дистанцию","этого лучше издалека","осторожно с этим");
+        else eventSpeech(observer,48,true,"заметил паразита","там зараженный","паразит тут","опа, еще один","осторожнее, контакт","у нас гости","блин, заметил тварь");
     }
     @SubscribeEvent(receiveCanceled=false)
     public void onAttacked(net.minecraftforge.event.entity.living.LivingAttackEvent event) {
@@ -529,7 +579,7 @@ public final class SurvivorService extends CommandBase {
             if (owner != null) remove(owner, bot);
             else bot.cancelPlanning();
         }
-        bots.clear(); assistance.clear(); dialogue.clear(); chatQueue.clear(); chatMemory.clear(); chatCooldown.clear(); chatRecent.clear(); modelPending.clear(); nextPublicChat=0; nextAmbientChat=0; squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
+        bots.clear(); assistance.clear(); dialogue.clear(); chatQueue.clear(); chatMemory.clear(); chatCooldown.clear(); chatRecent.clear(); modelPending.clear(); localPending.clear(); speech.clear(); nextPublicChat=0; nextAmbientChat=0; squadMessages.clear(); lastTickNanos=0; meanAiMs=0; meanTickMs=50; ticks=0; stressed=false;
     }
     /** Vanilla clients resolve SPacketSpawnPlayer through the tab profile map.
      * PlayerLoggedInEvent is too late: world insertion can start entity tracking first. */
@@ -625,7 +675,7 @@ public final class SurvivorService extends CommandBase {
             String context="Собеседник "+sender.getName()+"; фракция "+faction+"; характер "+SurvivorPersonality.description(selected.personality())+"; сторона людей, отряд Купол";
             if(selected.world instanceof WorldServer world)context+="; "+SurvivorMemory.get(world).recallConversation(selected.getUniqueID(),sender.getUniqueID(),faction);
             String history=memory==null||!continued?"":"Предыдущее сообщение: "+memory.message()+"\nПредыдущий ответ: "+memory.reply()+"\n";
-            if(dialogue.offer(botKey,selected.getEntityId(),sender.getUniqueID(),turn.requestId(),context,history+"Новое сообщение: "+msg,reply)){
+            if(dialogue.offer(botKey,selected.getEntityId(),sender.getUniqueID(),turn.requestId(),context,history+"Новое сообщение: "+msg+"\nНе повторяй ранее сказанное: "+speech.context(),reply)){
                 modelPending.put(sender.getUniqueID(),turn);return;
             }
         }
@@ -642,14 +692,14 @@ public final class SurvivorService extends CommandBase {
         chatCooldown.put(k,ticks+160);
         String context="Отряд Купол, союзник "+listener.getName()+"; характер "+SurvivorPersonality.description(speaker.personality())+"; оба сейчас вне боя.";
         String prompt=opening?"Начни короткий естественный разговор с этим союзником, без обещаний или выдуманных событий.":"Ответь союзнику на его настоящую реплику: "+previous;
-        if(dialogue.offer(k,speaker.getEntityId(),listener.getUniqueID(),turn.requestId(),context,prompt,fallback))modelPending.put(listener.getUniqueID(),turn);
+        if(dialogue.offer(k,speaker.getEntityId(),listener.getUniqueID(),turn.requestId(),context,prompt+"; не повторяй: "+speech.context(),fallback))modelPending.put(listener.getUniqueID(),turn);
         else chatQueue.addLast(turn);
     }
     private void ambientChat(){
-        if(ticks<nextAmbientChat||stressed||!chatQueue.isEmpty()||!modelPending.isEmpty())return;
+        if(ticks<nextAmbientChat||stressed||!chatQueue.isEmpty()||!modelPending.isEmpty()||!localPending.isEmpty())return;
         nextAmbientChat=ticks+1200+java.util.concurrent.ThreadLocalRandom.current().nextInt(1201);
         for(SurvivorPlayer a:bots.values())for(SurvivorPlayer b:bots.values()){
-            if(a==b||a.world!=b.world||!a.isEntityAlive()||!b.isEntityAlive()||a.getDistanceSq(b)>256||!a.calmForSupply()||!b.calmForSupply())continue;
+            if(!localAudience(a,48)||a==b||a.world!=b.world||!a.isEntityAlive()||!b.isEntityAlive()||a.getDistanceSq(b)>256||!a.calmForSupply()||!b.calmForSupply())continue;
             if(ticks<chatCooldown.getOrDefault(key(a.getName()),0)||ticks<chatCooldown.getOrDefault(key(b.getName()),0))continue;
             queueAmbient(a,b,"");return;
         }
