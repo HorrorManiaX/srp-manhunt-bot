@@ -1,0 +1,69 @@
+package com.x4yi.automata.manhunt;
+import com.x4yi.automata.AutomataMod;
+import com.x4yi.automata.compat.ManhuntCompat;
+import java.lang.reflect.Method;
+import java.lang.reflect.Field;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
+/** Optional adapter to Modular Warfare. Never synthesizes client hits or damage. */
+final class SurvivorWeapons {
+    private static final class Api {
+        static Class<?> gun;
+        static Method hasShot, mode, build, fire;
+        static Field type, delay, range;
+        static boolean available;
+        static {
+            try {
+                gun = Class.forName("com.modularwarfare.common.guns.ItemGun");
+                Class<?> gt = Class.forName("com.modularwarfare.common.guns.GunType");
+                Class<?> fm = Class.forName("com.modularwarfare.common.guns.WeaponFireMode");
+                Class<?> data = Class.forName("com.modularwarfare.common.guns.manager.FireManager$FireData");
+                Class<?> manager = Class.forName("com.modularwarfare.common.guns.manager.FireManager");
+                hasShot = gun.getMethod("hasNextShot", ItemStack.class);
+                mode = gt.getMethod("getFireMode", ItemStack.class);
+                type = gun.getField("type"); delay = gt.getField("fireTickDelay"); range = gt.getField("weaponMaxRange");
+                build = data.getMethod("buildServer", float.class, float.class, World.class, ItemStack.class, gun, fm, boolean.class, Float.class, Float.class);
+                fire = manager.getMethod("fire", EntityLivingBase.class, data);
+                available = true;
+            } catch (ReflectiveOperationException | LinkageError | RuntimeException ex) {
+                AutomataMod.LOGGER.warn("Manhunt AI: Modular Warfare integration unavailable: " + ex);
+            }
+        }
+    }
+    static int loadedGun(SurvivorPlayer bot) {
+        if (!Api.available) return -1;
+        try {
+            for (int i = 0; i < 9; i++) {
+                ItemStack s = bot.inventory.getStackInSlot(i);
+                if (!s.isEmpty() && Api.gun.isInstance(s.getItem()) && Boolean.TRUE.equals(Api.hasShot.invoke(null, s))) return i;
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ex) { disable(ex); }
+        return -1;
+    }
+    static int fire(SurvivorPlayer bot, EntityLivingBase target) {
+        if (!Api.available || !ManhuntCompat.isHostile(target) || !bot.canEntityBeSeen(target)) return 20;
+        try {
+            ItemStack s = bot.getHeldItemMainhand();
+            if (!Api.gun.isInstance(s.getItem()) || !Boolean.TRUE.equals(Api.hasShot.invoke(null, s))) return 20;
+            Object t = Api.type.get(s.getItem());
+            if (bot.getDistanceSq(target) > Math.pow(Math.min(24, Api.range.getInt(t)), 2)) return 10;
+            Vec3d start = bot.getPositionEyes(1F), end = start.add(bot.getLookVec().scale(Math.min(24, Api.range.getInt(t))));
+            if (target.getEntityBoundingBox().grow(.15).calculateIntercept(start, end) == null) return 3;
+            for (EntityPlayer ally : bot.world.getEntitiesWithinAABB(EntityPlayer.class, bot.getEntityBoundingBox().grow(25))) {
+                if (ally != bot && !ManhuntCompat.isHostile(ally) && ally.getEntityBoundingBox().grow(.8).calculateIntercept(start, end) != null) return 10;
+            }
+            Object m = Api.mode.invoke(null, s);
+            if (m == null) return 20;
+            Object data = Api.build.invoke(null, bot.rotationPitch, bot.rotationYaw, bot.world, s, s.getItem(), m, true, null, null);
+            Api.fire.invoke(null, bot, data);
+            return Math.max(8, Api.delay.getInt(t)) + bot.getRNG().nextInt(5);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ex) { disable(ex); return 100; }
+    }
+    private static void disable(Throwable ex) {
+        Api.available = false;
+        AutomataMod.LOGGER.warn("Manhunt AI: disabling experimental gun adapter", ex);
+    }
+}
