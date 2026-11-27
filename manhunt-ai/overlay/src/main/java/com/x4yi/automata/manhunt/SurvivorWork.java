@@ -20,7 +20,7 @@ final class SurvivorWork {
     private final BlockPos home;
     private final SurvivorProgression.Role role;
     private final SurvivorTechnology technology;
-    private int nextTech,nextIndustry;
+    private int nextTech;
     private boolean industry;
     private net.minecraft.block.Block requestedOre;
     private boolean enabled,shelterQueued;
@@ -159,8 +159,7 @@ final class SurvivorWork {
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
         if(technology.active()&&age>=nextTech){nextTech=age+80;if(technology.step(SurvivorCrafting.nearbyBench(bot))){memory().count(bot.getUniqueID(),"crafted");return;}}
-        if(industry&&age>=nextIndustry&&has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)){
-            nextIndustry=age+20;
+        if(industry&&has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)){
             if(industrialStep())return;
         }
         SurvivorProgression.Task next=SurvivorProgression.choose(stock(),role);
@@ -187,9 +186,11 @@ final class SurvivorWork {
         if(has(Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE))return false;
         Item ore=Item.getItemFromBlock(Blocks.IRON_ORE),furnace=Item.getItemFromBlock(Blocks.FURNACE);
         if(count(Items.IRON_INGOT)>=3){
+            if(count(Items.STICK)<2){if(!craft(Items.STICK,false))return false;return true;}
             if(ensureBench())craft(Items.IRON_PICKAXE,true);
             return true;
         }
+        if(bot.furnaceBusy())return true;
         if(!bot.hasFurnaceStation()){
             if(has(furnace)){bot.furnaceStation();return true;}
             if(count(Item.getItemFromBlock(Blocks.COBBLESTONE))>=8){
@@ -204,8 +205,8 @@ final class SurvivorWork {
         return true;
     }
     private void mineOre(net.minecraft.block.Block ore){
-        if(requestedOre!=ore){clear();requestedOre=ore;task=SurvivorProgression.Task.STONE;}
-        findResource();
+        if(requestedOre!=ore){clear();requestedOre=ore;}
+        task=SurvivorProgression.Task.STONE;findResource();
     }
     boolean act(){
         if(!enabled||target==null)return false;
