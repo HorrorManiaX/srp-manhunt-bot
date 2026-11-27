@@ -27,6 +27,7 @@ final class SurvivorTechnology {
         int n=0;for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(!s.isEmpty()&&s.getItem()==item)n+=s.getCount();}return n;
     }
     boolean active(){return goal!=null;}
+    String goalId(){return goal==null?"":goal.getRegistryName().toString();}
     boolean step(boolean table){
         if(goal==null)return false;
         if(count(goal)>0){clear();return false;}
