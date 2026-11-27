@@ -6,6 +6,14 @@ import java.util.List;
 public final class SurvivorBlueprint {
     public record Offset(int x,int y,int z) {}
     private SurvivorBlueprint(){}
+    public static List<Offset> shelter(){
+        List<Offset> result=new ArrayList<>(perimeter(0,1,2));
+        // Roof goes from supported perimeter toward the middle; entrance stays open below.
+        for(int radius=2;radius>=0;radius--)for(int x=-radius;x<=radius;x++)for(int z=-radius;z<=radius;z++){
+            if(Math.max(Math.abs(x),Math.abs(z))==radius)result.add(new Offset(x,2,z));
+        }
+        return List.copyOf(result);
+    }
     public static List<Offset> perimeter(int worker,int workers,int levels){
         if(workers<1||workers>6||worker<0||worker>=workers||levels<1||levels>2)throw new IllegalArgumentException("invalid team");
         List<Offset> result=new ArrayList<>();
