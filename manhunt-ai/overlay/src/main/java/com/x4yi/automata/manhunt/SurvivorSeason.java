@@ -14,6 +14,7 @@ final class SurvivorSeason {
     private static final ResourceLocation LURE=new ResourceLocation("srparasites:evolutionlure"),SPECIMEN=new ResourceLocation("overlast:final_specimen");
     SurvivorSeason(SurvivorPlayer bot){this.bot=bot;}
     String status(){return status;}
+    boolean needsIron(){return (count(SPECIMEN,-1)>0||bot.arenaSpecimen())&&count(new ResourceLocation("minecraft:iron_block"),-1)<9&&count(new ResourceLocation("minecraft:iron_ingot"),-1)<15;}
     static boolean useful(ItemStack s){
         if(s.isEmpty()||s.getItem().getRegistryName()==null)return false;
         String id=s.getItem().getRegistryName().toString();
