@@ -37,7 +37,7 @@ public final class SurvivorService extends CommandBase {
             SurvivorPlayer bot=bots.get(answer.botKey());
             if(bot==null||!bot.isEntityAlive()||bot.getEntityId()!=answer.entityId()||answer.text().isEmpty())continue;
             EntityPlayerMP player=bot.getServer().getPlayerList().getPlayerByUUID(answer.senderId());
-            if(player!=null&&player.world==bot.world)player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+answer.text()));
+            if(player!=null&&player.world==bot.world){SurvivorTelemetry.event("chat",bot,answer.text());player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+answer.text()));}
         }
     }
     private double meanAiMs;
@@ -60,6 +60,7 @@ public final class SurvivorService extends CommandBase {
             case COVER -> "Держу дистанцию, прикрываю!";
             case WITHDRAW -> "Бля, не вывозим, отходим!";
         };
+        SurvivorTelemetry.event("chat",bot,line);
         for(EntityPlayerMP human:bot.getServer().getPlayerList().getPlayers())
             if(human.world==bot.world&&human.getDistanceSq(bot)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
                 human.sendMessage(new TextComponentString("[AI/отряд] "+bot.getName()+": "+line));
@@ -77,6 +78,7 @@ public final class SurvivorService extends CommandBase {
         String line=lines[observer.getRNG().nextInt(lines.length)];
         String warning=SurvivorParasiteTactics.warning(enemy);if(!warning.isEmpty())line+=" "+warning;
         if(vagrant&&SurvivorContacts.alias(enemy.getName()).equals("Vagrantik"))line="Проповедник (Vagrantik) на контакте! "+line;
+        SurvivorTelemetry.event("chat",observer,line);
         for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
         for(EntityPlayerMP human:observer.getServer().getPlayerList().getPlayers()){
             if(human.world!=observer.world||human.getDistanceSq(observer)>48*48||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
@@ -96,9 +98,11 @@ public final class SurvivorService extends CommandBase {
     }
     @SubscribeEvent(receiveCanceled=false)
     public void onDeath(net.minecraftforge.event.entity.living.LivingDeathEvent event){
+        if(!event.getEntityLiving().world.isRemote&&event.getEntityLiving() instanceof SurvivorPlayer bot&&bots.get(key(bot.getName()))==bot)SurvivorTelemetry.event("death",bot,event.getSource().getDeathMessage(bot).getUnformattedText());
         if(event.getEntityLiving().world.isRemote)return;
         if(event.getSource().getTrueSource() instanceof SurvivorPlayer bot && bots.get(key(bot.getName()))==bot && com.x4yi.automata.compat.ManhuntCompat.isHostile(event.getEntityLiving())){
             bot.recordVictory();
+            SurvivorTelemetry.event("kill",bot,event.getEntityLiving().getName());
         }
     }
     @SubscribeEvent(receiveCanceled=false)
@@ -112,6 +116,17 @@ public final class SurvivorService extends CommandBase {
     @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | park <name> | resume <name> | parked | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        if(args.length==1&&args[0].equals("rosterjson")){
+            com.google.gson.JsonArray result=new com.google.gson.JsonArray();
+            for(SurvivorPlayer bot:bots.values()){
+                if(!bot.isEntityAlive())continue;
+                com.google.gson.JsonObject row=new com.google.gson.JsonObject();
+                row.addProperty("name",bot.getName());row.addProperty("ai",true);
+                row.addProperty("hp",bot.getHealth());row.addProperty("max_hp",bot.getMaxHealth());
+                result.add(row);
+            }
+            sender.sendMessage(new TextComponentString("MANHUNT_AI_ROSTER "+result.toString()));return;
+        }
         if(args.length==1&&args[0].equals("reinforce")){
             population.reinforce();sender.sendMessage(new TextComponentString("AI reinforcement search scheduled for next second, prioritizing loaded safe areas near human BRO. No forced spawn."));return;
         }
@@ -324,6 +339,7 @@ public final class SurvivorService extends CommandBase {
         try {
             if (!world.spawnEntity(bot)) throw new CommandException("AI spawn rejected");
             bots.put(key(name), bot);
+            SurvivorTelemetry.event("join",bot,"");
             announce(server,name+" — ИИ-выживший присоединился к миру.");
         } catch (RuntimeException | CommandException e) {
             bots.remove(key(name));bot.cancelPlanning();
@@ -356,6 +372,7 @@ public final class SurvivorService extends CommandBase {
         bot.cancelPlanning();
         bot.world.removeEntityDangerously(bot);
         broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.REMOVE_PLAYER, bot));
+        SurvivorTelemetry.event("leave",bot,"");
         announce(server,bot.getName()+" — ИИ-выживший покинул мир.");
     }
     public void clear(MinecraftServer server) {
@@ -379,6 +396,7 @@ public final class SurvivorService extends CommandBase {
         if(ticks>=nextHumanHelp&&SurvivorContacts.alias(event.getPlayer().getName()).equals("BRO")&&SurvivorContacts.friendly(event.getPlayer())&&SurvivorContacts.distress(msg)){
             nextHumanHelp=ticks+200;
             for(SurvivorPlayer bot:bots.values())if(bot.acceptHumanHelp(event.getPlayer())){
+                SurvivorTelemetry.event("chat",bot,"Бро, вижу тебя, попробую прикрыть.");
                 event.getPlayer().sendMessage(new TextComponentString("[ИИ] "+bot.getName()+": Бро, вижу тебя, попробую прикрыть."));break;
             }
         }
@@ -389,6 +407,7 @@ public final class SurvivorService extends CommandBase {
             String reply=bot.reply(msg.substring(prefix.length()));
             if(reply!=null && dialogue.offer(key(bot.getName()),bot.getEntityId(),event.getPlayer().getUniqueID(),bot.dialogueContext(),msg.substring(prefix.length()),reply))break;
             if(reply!=null) {
+                SurvivorTelemetry.event("chat",bot,reply);
                 for(EntityPlayerMP player:bot.getServer().getPlayerList().getPlayers())if(player.world==bot.world && player.getDistanceSq(bot)<=32*32)
                     player.sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
                 if(event.getPlayer().getDistanceSq(bot)>32*32)event.getPlayer().sendMessage(new TextComponentString("[AI] "+bot.getName()+": "+reply));
