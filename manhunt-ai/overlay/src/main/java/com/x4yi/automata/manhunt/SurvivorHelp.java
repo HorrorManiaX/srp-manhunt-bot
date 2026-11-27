@@ -69,6 +69,6 @@ final class SurvivorHelp {
         SurvivorTelemetry.event("chat",bot,text);
         for(EntityPlayerMP p:bot.getServer().getPlayerList().getPlayers())
             if(p.world==bot.world&&p.getDistanceSq(bot)<=48*48&&!ManhuntCompat.isHostile(p))
-                p.sendMessage(new TextComponentString("[AI/отряд] "+bot.getName()+": "+text));
+                p.sendMessage(new TextComponentString(bot.getName()+": "+text));
     }
 }
