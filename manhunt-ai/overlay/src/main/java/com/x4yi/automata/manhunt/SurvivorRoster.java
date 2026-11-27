@@ -30,6 +30,7 @@ public final class SurvivorRoster extends WorldSavedData {
         bot.getFoodStats().writeNBT(n);
         n.setInteger("hotbar",bot.inventory.currentItem);
         n.setBoolean("autonomous",bot.autonomousEnabled());
+        n.setBoolean("industry",bot.industryEnabled());
         n.setString("goal",bot.technologyGoalId());
         parked.setTag(key,n);markDirty();return true;
     }
@@ -46,6 +47,7 @@ public final class SurvivorRoster extends WorldSavedData {
         bot.setHealth(Float.isFinite(health)?Math.max(1,Math.min(bot.getMaxHealth(),health)):1);
         bot.getFoodStats().readNBT(n);
         bot.autonomous(n.getBoolean("autonomous"));
+        bot.industry(n.getBoolean("industry"));
         String goal=n.getString("goal");
         if(!goal.isEmpty())bot.techGoal(new net.minecraft.util.ResourceLocation(goal));
         bot.inventory.markDirty();
