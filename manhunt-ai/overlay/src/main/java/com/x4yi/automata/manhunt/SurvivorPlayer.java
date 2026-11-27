@@ -461,13 +461,29 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private String russianActivity() {
         return switch (activity) { case "combat" -> "в бою"; case "retreat" -> "отступаю"; case "build" -> "укрепляю позицию"; case "scavenge" -> "собираю ресурсы"; case "eat" -> "восстанавливаю силы"; default -> "патрулирую"; };
     }
-    private void equipVanillaArmor(){
+    // Manhunt's exact Modular Warfare build implements ISpecialArmor on ItemMWArmor.
+    // Only approved human equipment, never parasite armor.
+    private double humanArmorScore(ItemStack stack){
+        if(stack.isEmpty()||!(stack.getItem() instanceof net.minecraft.item.ItemArmor armor))return -1;
+        var id=armor.getRegistryName();
+        if(id==null||!java.util.Set.of("minecraft","modularwarfare","thermalfoundation").contains(id.getNamespace()))return -1;
+        double protection=armor.damageReduceAmount;
+        if(armor instanceof net.minecraftforge.common.ISpecialArmor special){
+            try{protection=Math.max(0,special.getArmorDisplay(this,stack,armor.armorType.getIndex()));}
+            catch(RuntimeException|LinkageError e){return -1;}
+        }
+        int ench=net.minecraft.enchantment.EnchantmentHelper.getEnchantmentLevel(net.minecraft.init.Enchantments.PROTECTION,stack);
+        double durability=stack.isItemStackDamageable()?Math.max(0.0,1.0-(double)stack.getItemDamage()/Math.max(1,stack.getMaxDamage())):1.0;
+        return (protection+ench*.75)*(durability<.15?.55:1.0)+durability*.2;
+    }
+    private void equipHumanArmor(){
         for(int i=0;i<36;i++){
             ItemStack s=inventory.getStackInSlot(i);
-            if(s.isEmpty()||!(s.getItem() instanceof net.minecraft.item.ItemArmor armor)||s.getItem().getRegistryName()==null||!"minecraft".equals(s.getItem().getRegistryName().getNamespace()))continue;
+            if(s.isEmpty()||!(s.getItem() instanceof net.minecraft.item.ItemArmor armor))continue;
+            double score=humanArmorScore(s);if(score<0)continue;
             var slot=armor.armorType;
             ItemStack old=getItemStackFromSlot(slot);
-            if(!old.isEmpty() && (!(old.getItem() instanceof net.minecraft.item.ItemArmor worn)||worn.damageReduceAmount>armor.damageReduceAmount||worn.damageReduceAmount==armor.damageReduceAmount&&old.getItemDamage()<=s.getItemDamage()))continue;
+            if(!old.isEmpty()&&(!(old.getItem() instanceof net.minecraft.item.ItemArmor)||humanArmorScore(old)>=score))continue;
             inventory.setInventorySlotContents(i,old);
             setItemStackToSlot(slot,s);inventory.markDirty();
         }
@@ -538,7 +554,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(bowSlot>=0&&inventory.getStackInSlot(bowSlot).getItem()!=Items.BOW)bowSlot=-1;
         if(age>=nextInventoryScan) {
             nextInventoryScan=age+(target!=null?4:10);
-            if(target==null&&!stressed&&age%100<10)equipVanillaArmor();
+            if(target==null&&!stressed&&age%100<10)equipHumanArmor();
             gunSlot=SurvivorWeapons.loadedGun(this);bowSlot=findBow();foodSlot=findFood();
         }
         if(age>=nextScan) {
