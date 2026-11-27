@@ -25,6 +25,7 @@ public final class SurvivorRoster extends WorldSavedData {
         if(contains(key)||parked.getKeySet().size()>=32||!bot.isEntityAlive())return false;
         NBTTagCompound n=new NBTTagCompound();
         n.setString("name",bot.getName());
+        n.setString("uuid",bot.getUniqueID().toString());
         n.setLong("home",bot.homePosition().toLong());
         n.setLong("position",bot.getPosition().toLong());
         n.setTag("inventory",bot.inventory.writeToNBT(new NBTTagList()));
@@ -39,6 +40,10 @@ public final class SurvivorRoster extends WorldSavedData {
     NBTTagCompound snapshot(String key){return contains(key)?parked.getCompoundTag(key).copy():null;}
     void forget(String key){parked.removeTag(key);markDirty();}
     java.util.Set<String> names(){return new java.util.TreeSet<>(parked.getKeySet());}
+    static java.util.UUID uuid(NBTTagCompound n){
+        if(n.hasKey("uuid",8))try{return java.util.UUID.fromString(n.getString("uuid"));}catch(IllegalArgumentException ignored){}
+        return java.util.UUID.nameUUIDFromBytes(("ManhuntAI:"+n.getString("name")).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
     static BlockPos position(NBTTagCompound n){return BlockPos.fromLong(n.getLong("position"));}
     static BlockPos home(NBTTagCompound n){return BlockPos.fromLong(n.getLong("home"));}
     static void restore(SurvivorPlayer bot,NBTTagCompound n){
