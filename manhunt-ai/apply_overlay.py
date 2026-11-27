@@ -69,3 +69,51 @@ patch('navigation/AutomatonPathfinder.java', [
     ('int maxGap = hasRunup ? 4 : 2;', 'int maxGap = settings.allowClimbing() ? 1 : hasRunup ? 4 : 2;'),
     ('if (settings.allowSprintJump() && world.isPassable(cx, cy + 2, cz)) {\n            tryDiagonalParkourJumps', 'if (settings.allowSprintJump() && !settings.allowClimbing() && world.isPassable(cx, cy + 2, cz)) {\n            tryDiagonalParkourJumps')
 ])
+
+# Server-only deployment: retain AI and pathfinding, never register upstream content or X4UI channels.
+mod.write_text('''package com.x4yi.automata;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
+import net.minecraftforge.fml.common.event.FMLServerStoppingEvent;
+import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.common.MinecraftForge;
+import com.x4yi.automata.manhunt.SurvivorService;
+import com.x4yi.automata.navigation.PathfindingExecutor;
+@Mod(modid=AutomataMod.MOD_ID,name=AutomataMod.MOD_NAME,version=AutomataMod.VERSION,acceptableRemoteVersions="*",serverSideOnly=true)
+public class AutomataMod {
+    public static final String MOD_ID="@{MOD_ID}";
+    public static final String MOD_NAME="@{MOD_NAME}";
+    public static final String VERSION="@{MOD_VERSION}";
+    public static final Logger LOGGER=LogManager.getLogger(MOD_NAME);
+    @Mod.Instance(MOD_ID) public static AutomataMod instance;
+    @Mod.EventHandler public void serverStarting(FMLServerStartingEvent event){
+        event.registerServerCommand(SurvivorService.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(SurvivorService.INSTANCE);
+        LOGGER.info("Manhunt AI server-only: no custom registry entries or UI channels");
+    }
+    @Mod.EventHandler public void serverStopping(FMLServerStoppingEvent event){
+        try{SurvivorService.INSTANCE.shutdown(FMLCommonHandler.instance().getMinecraftServerInstance());}
+        finally{MinecraftForge.EVENT_BUS.unregister(SurvivorService.INSTANCE);PathfindingExecutor.shutdown();}
+    }
+}
+''',encoding='utf-8')
+# Keep only cache invalidation as an automatic event subscriber. Original UI, registry,
+# compatibility and automaton event hooks must never load without their optional libraries.
+import re
+java_root=target/'src/main/java/com/x4yi/automata'
+for f in java_root.rglob('*.java'):
+    if f.name=='WorldCacheManager.java':
+        continue
+    old=f.read_text(encoding='utf-8')
+    new=re.sub(r'(?m)^\\s*@(?:Mod\\.)?EventBusSubscriber\\([^\\n]*\\)\\s*\\n','\\n',old)
+    new=re.sub(r'(?m)^\\s*@WailaPlugin\\s*\\n','\\n',new)
+    new=re.sub(r'(?m)^\\s*@JEIPlugin\\s*\\n','\\n',new)
+    new=re.sub(r'(?m)^\\s*@Config\\(modid = AutomataMod.MOD_ID, name = AutomataMod.MOD_ID\\)\\s*\\n','\\n',new)
+    if old!=new:f.write_text(new,encoding='utf-8')
+# X4UI is used only to compile dormant upstream classes; it is not a runtime mod dependency.
+gradle=target/'build.gradle'
+s=gradle.read_text(encoding='utf-8')
+s=s.replace("implementation deobf('maven.modrinth:x4ui:r1.0b7')","compileOnly deobf('maven.modrinth:x4ui:r1.0b7')")
+gradle.write_text(s,encoding='utf-8')
