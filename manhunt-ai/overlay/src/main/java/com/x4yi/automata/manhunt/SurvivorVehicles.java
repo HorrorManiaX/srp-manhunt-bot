@@ -15,12 +15,13 @@ final class SurvivorVehicles {
     private final SurvivorTechnology recipes;
     private static final ResourceLocation TABLE=new ResourceLocation("mcheli:drafting_table");
     private ResourceLocation goal;
-    private BlockPos table;
+    private BlockPos table,approach;
     private int next;
     private boolean disabled;
     private String status="idle";
     SurvivorVehicles(SurvivorPlayer bot){this.bot=bot;recipes=new SurvivorTechnology(bot);}
     String status(){return status;}
+    BlockPos destination(){return approach;}
     static boolean aircraft(ItemStack s){
         if(s.isEmpty())return false;
         for(Class<?> c=s.getItem().getClass();c!=null;c=c.getSuperclass())if(c.getName().equals("com.norwood.mcheli.aircraft.MCH_ItemAircraft"))return true;
@@ -35,10 +36,11 @@ final class SurvivorVehicles {
         if(bot.world.isBlockLoaded(p)&&TABLE.equals(bot.world.getBlockState(p).getBlock().getRegistryName()))table=p.toImmutable();
     }
     boolean plan(int age){
-        if(disabled||goal==null||age<next||!net.minecraftforge.fml.common.Loader.isModLoaded("mcheli"))return false;
+        if(disabled||goal==null||!net.minecraftforge.fml.common.Loader.isModLoaded("mcheli")){approach=null;return false;}
+        if(age<next)return false;
         next=age+100;
         if(table==null||!bot.world.isBlockLoaded(table)||!TABLE.equals(bot.world.getBlockState(table).getBlock().getRegistryName())){
-            boolean carried=false;
+            approach=null;boolean carried=false;
             for(int i=0;i<36;i++){ItemStack s=bot.inventory.getStackInSlot(i);if(!s.isEmpty()&&TABLE.equals(s.getItem().getRegistryName())){carried=true;break;}}
             if(!carried){status="requires drafting table";return recipes.produceOnce(TABLE,-1);}
             for(var f:net.minecraft.util.EnumFacing.HORIZONTALS){
@@ -47,7 +49,9 @@ final class SurvivorVehicles {
             }
             return false;
         }
-        if(!SurvivorPermissions.interact(bot,table)||bot.getDistanceSqToCenter(table)>16)return false;
+        if(!SurvivorPermissions.interact(bot,table)){approach=null;return false;}
+        if(bot.getDistanceSqToCenter(table)>16){approach=null;double best=Double.MAX_VALUE;for(var f:net.minecraft.util.EnumFacing.HORIZONTALS){BlockPos p=table.offset(f);if(SurvivorTerrain.stand(bot.world,p)&&bot.getDistanceSqToCenter(p)<best){approach=p;best=bot.getDistanceSqToCenter(p);}}return false;}
+        approach=null;
         var hit=bot.world.rayTraceBlocks(bot.getPositionEyes(1),new Vec3d(table).add(.5,.5,.5),false,true,false);
         if(hit==null||!table.equals(hit.getBlockPos()))return false;
         IRecipe recipe=ForgeRegistries.RECIPES.getValue(goal);
