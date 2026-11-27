@@ -68,6 +68,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     BlockPos homePosition(){return home;}
     boolean autonomousEnabled(){return work.isEnabled();}
+    SurvivorProgression.Role role(){return work.role();}
+    SurvivorPersonality.Style personality(){return SurvivorPersonality.style(getUniqueID().hashCode()>>>8);}
+    boolean calmForSupply(){return !stressed&&target==null&&age>=alertUntil&&!dangerousHere()&&!isHandActive()&&age>=reloadUntil;}
+    String dialogueContext(){return activity()+"; характер: "+SurvivorPersonality.description(personality())+"; здоровье "+getHealth()+"/"+getMaxHealth();}
     String technologyGoalId(){return work.goalId();}
     public String activity() { return activity+"/"+work.status()+"/furnace="+furnace.status()+"/build="+buildStatus(); }
     boolean hasFurnaceStation(){return furnace.validStation();}
