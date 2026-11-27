@@ -161,8 +161,6 @@ final class SurvivorWork {
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
         if(bot.seasonWork(age))return;
-        if(bot.vehicleWork(age))return;
-        if(bot.role()==SurvivorProgression.Role.ENGINEER||bot.role()==SurvivorProgression.Role.GUARD)if(bot.turretWork(age))return;
         if(age>=nextEquipment){
             nextEquipment=age+100;
             if(SurvivorEquipment.improve(bot)){memory().count(bot.getUniqueID(),"crafted");return;}
