@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Optional local dialogue only. No game actions are parsed from model output. */
 final class SurvivorDialogue {
-    record Answer(String botKey,int entityId,java.util.UUID senderId,String text) {}
+    record Answer(String botKey,int entityId,java.util.UUID senderId,long requestId,String text) {}
     private final String model=System.getenv().getOrDefault("MANHUNT_AI_OLLAMA_MODEL","qwen2.5:3b").trim();
     private final boolean active=!"false".equalsIgnoreCase(System.getenv("MANHUNT_AI_OLLAMA_ENABLED"));
     private final AtomicLong generation=new AtomicLong();
@@ -27,7 +27,7 @@ final class SurvivorDialogue {
         new ThreadPoolExecutor.AbortPolicy());
     private HttpClient http;
     boolean enabled(){return active&&model.matches("[A-Za-z0-9_.:/-]{1,100}")&&(retryAfter==0||System.nanoTime()-retryAfter>=0); }
-    boolean offer(String botKey,int entityId,java.util.UUID senderId,String status,String question,String fallback){
+    boolean offer(String botKey,int entityId,java.util.UUID senderId,long requestId,String status,String question,String fallback){
         if(!enabled())return false;
         String q=limit(question,1000),state=limit(status,600); long epoch=generation.get(); long submitted=System.nanoTime();
         try {
@@ -47,7 +47,7 @@ final class SurvivorDialogue {
                         }
                     }
                 }
-                if(epoch==generation.get())answers.offer(new Answer(botKey,entityId,senderId,sanitize(response)));
+                if(epoch==generation.get())answers.offer(new Answer(botKey,entityId,senderId,requestId,sanitize(response)));
             });return true;
         }catch(java.util.concurrent.RejectedExecutionException ex){return false;}
     }
