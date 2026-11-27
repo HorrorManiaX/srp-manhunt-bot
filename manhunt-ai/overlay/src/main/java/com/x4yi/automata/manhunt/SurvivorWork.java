@@ -201,9 +201,10 @@ final class SurvivorWork {
         }
     }
     private boolean industrialStep(){
-        if(has(Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE))return false;
+        boolean ironTool=has(Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE);
+        if(ironTool&&(!SurvivorEquipment.needsIron(bot)||count(Items.IRON_INGOT)>=12))return false;
         Item ore=Item.getItemFromBlock(Blocks.IRON_ORE),furnace=Item.getItemFromBlock(Blocks.FURNACE);
-        if(count(Items.IRON_INGOT)>=3){
+        if(!ironTool&&count(Items.IRON_INGOT)>=3){
             if(count(Items.STICK)<2){if(!craft(Items.STICK,false))return false;return true;}
             if(ensureBench())craft(Items.IRON_PICKAXE,true);
             return true;
