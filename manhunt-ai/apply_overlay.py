@@ -91,6 +91,7 @@ public class AutomataMod {
     @Mod.EventHandler public void serverStarting(FMLServerStartingEvent event){
         event.registerServerCommand(SurvivorService.INSTANCE);
         MinecraftForge.EVENT_BUS.register(SurvivorService.INSTANCE);
+        event.registerServerCommand(new com.x4yi.automata.manhunt.SurvivorParticipantsCommand());
         LOGGER.info("Manhunt AI server-only: no custom registry entries or UI channels");
     }
     @Mod.EventHandler public void serverStopping(FMLServerStoppingEvent event){
