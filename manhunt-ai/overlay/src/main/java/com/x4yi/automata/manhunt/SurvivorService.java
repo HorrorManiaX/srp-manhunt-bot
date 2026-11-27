@@ -123,6 +123,13 @@ public final class SurvivorService extends CommandBase {
             SurvivorTelemetry.event("kill",bot,event.getEntityLiving().getName());
         }
     }
+    /** Telegram telemetry only: report PvP kills separately from mob kills. */
+    @SubscribeEvent(priority=net.minecraftforge.fml.common.eventhandler.EventPriority.LOWEST, receiveCanceled=false)
+    public void onPlayerKillTelemetry(net.minecraftforge.event.entity.living.LivingDeathEvent event){
+        if(event.getEntityLiving().world.isRemote || !(event.getEntityLiving() instanceof EntityPlayerMP victim) || victim instanceof SurvivorPlayer)return;
+        if(event.getSource().getTrueSource() instanceof SurvivorPlayer bot && bots.get(key(bot.getName()))==bot)
+            SurvivorTelemetry.event("player_kill",bot,victim.getName());
+    }
     @SubscribeEvent(receiveCanceled=false)
     public void onExplosion(net.minecraftforge.event.world.ExplosionEvent.Start event) {
         if(event.getWorld().isRemote) return;
