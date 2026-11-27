@@ -27,6 +27,47 @@ final class SurvivorSeason {
         }
         return total;
     }
+    static int progress(SurvivorPlayer bot){
+        int mask=0,parts=0,stars=0,egg=0;
+        for(int i=0;i<36;i++){
+            ItemStack s=bot.inventory.getStackInSlot(i);if(s.isEmpty()||s.getItem().getRegistryName()==null)continue;
+            String id=s.getItem().getRegistryName().toString();
+            if(id.equals("overlast:final_specimen"))return 1000;
+            if(id.equals("srparasites:evolutionlure")&&s.getMetadata()>=0&&s.getMetadata()<6)mask|=1<<s.getMetadata();
+            if(id.startsWith("srparasites:lurecomponent"))parts+=Math.min(12,s.getCount());
+            if(id.equals("minecraft:nether_star"))stars+=s.getCount();
+            if(id.equals("minecraft:dragon_egg"))egg+=s.getCount();
+        }
+        return Integer.bitCount(mask)*20+Math.min(12,parts)+Math.min(2,stars)*8+Math.min(1,egg)*12;
+    }
+    static void pool(java.util.List<SurvivorPlayer> team){
+        // Elect the most advanced nearby agent, transfer only real materials at close range.
+        if(team.size()<2)return;
+        for(SurvivorPlayer from:team){
+            if(!from.autonomousEnabled()||!from.calmForSupply())continue;
+            SurvivorPlayer to=null;int best=progress(from);
+            for(SurvivorPlayer other:team){
+                if(other==from||!other.autonomousEnabled()||!other.calmForSupply()||other.world!=from.world||from.getDistanceSq(other)>9||!from.canEntityBeSeen(other))continue;
+                int value=progress(other);
+                if(value>best||value==best&&(to==null?other.getName().compareTo(from.getName())<0:other.getName().compareTo(to.getName())<0)){best=value;to=other;}
+            }
+            if(to==null||best>=1000)continue;
+            for(int i=0;i<36;i++){
+                ItemStack source=from.inventory.getStackInSlot(i);
+                if(source.isEmpty()||source.getItem().getRegistryName()==null||i==from.inventory.currentItem)continue;
+                String id=source.getItem().getRegistryName().toString();
+                if(!id.startsWith("srparasites:lurecomponent")&&!id.equals("srparasites:evolutionlure")&&!id.equals("minecraft:nether_star")&&!id.equals("minecraft:dragon_egg"))continue;
+                ItemStack offer=source.copy();offer.setCount(Math.min(2,source.getCount()));int n=offer.getCount();
+                to.inventory.addItemStackToInventory(offer);
+                int moved=n-offer.getCount();
+                if(moved<=0)continue;
+                source.shrink(moved);from.inventory.markDirty();to.inventory.markDirty();
+                for(var human:from.getServer().getPlayerList().getPlayers())if(human.world==from.world&&human.getDistanceSq(from)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
+                    human.sendMessage(new net.minecraft.util.text.TextComponentString("[AI/отряд] "+from.getName()+": "+to.getName()+", на держи, это для финальной битвы."));
+                return;
+            }
+        }
+    }
     private boolean recipe(String id){
         return SurvivorCrafting.craft(bot,new ResourceLocation(id),true);
     }
