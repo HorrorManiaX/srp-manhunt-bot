@@ -45,3 +45,11 @@ New modules: SurvivorProgression (six stable role labels and deterministic needs
 - Furnace jobs reuse residual heat and their own previously inserted coal. Stalled jobs expire without deleting materials in the world.
 - Standalone blueprint tests: all 12 partition scenarios passed locally. CI includes this test suite.
 - CI fixes: full upstream git history and tags for Cleanroom versioning; use non-generic Forge 1.12.2 IShapedRecipe. Run 54 reached Java compilation and reported two instances of that interface error. Fixed in source; full build pending confirmation.
+
+## Version 0.7 — Squad logistics and personalities (experimental)
+
+- Version 0.6 compiled successfully in GitHub Actions run 46045980802. Runtime mod archive is automata-1.2.0-local.dirty.jar; it replaces upstream Automata, not an additional mod. This is a successful compilation, not an in-game compatibility test.
+- Six deterministic dialogue styles (practical, cautious, friendly, reserved, optimistic, analytical). The stable AI identity is always visible; the style and actual state are passed to the optional local language model.
+- Nearby autonomous agents with neighboring homes can share surplus vanilla prepared food, planks, cobblestone, coal and iron. Maximum eight items per transfer, at most one transfer every 100 ticks for the squad; transfer requires proximity and sight and is suppressed during threats or server stress. Role-specific reserves and deficits keep supplies from being exhausted. No human inventory access. The exchange generates two short AI-labelled lines based on the actual transfer, not a fabricated event.
+- Squad scheduling has a soft 1 ms coordination deadline, not a hard CPU cap. CI adds exhaustive pure-policy coverage for 386100 stock/role/resource combinations plus six personality styles. Tests and full build for 0.7 must still be verified.
+- Real turret ownership/configuration, Thermal machine/RF networks, clan membership, full autonomous logistics navigation and free-form inter-agent LLM conversations remain unimplemented. The exact pack archive is too large for the connected download limit; do not guess mod-specific APIs.
