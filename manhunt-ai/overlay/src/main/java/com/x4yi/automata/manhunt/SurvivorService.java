@@ -46,16 +46,29 @@ public final class SurvivorService extends CommandBase {
     private int ticks;
     private boolean stressed;
     private final Map<String,Long> squadMessages=new LinkedHashMap<>();
-    private void squadAlert(SurvivorPlayer victim,net.minecraft.entity.EntityLivingBase threat){
-        long now=victim.world.getTotalWorldTime();
-        String key=victim.world.provider.getDimension()+":"+victim.getUniqueID();
+    double supportStrength(SurvivorPlayer caller,net.minecraft.entity.EntityLivingBase enemy){
+        double support=0;
+        for(SurvivorPlayer ally:bots.values()){
+            if(ally==caller||ally.world!=caller.world||!ally.isEntityAlive()||ally.getDistanceSq(caller)>144||ally.getDistanceSq(enemy)>256||!ally.canEntityBeSeen(enemy))continue;
+            if(ally.fightingSame(enemy)||ally.visibleEnemy()==enemy)support+=ally.combatStrength();
+        }
+        return support;
+    }
+    void observedThreat(SurvivorPlayer observer,net.minecraft.entity.EntityLivingBase enemy){
+        if(enemy==null||enemy.world!=observer.world||!enemy.isEntityAlive()||!com.x4yi.automata.compat.ManhuntCompat.isHostile(enemy)||!observer.canEntityBeSeen(enemy))return;
+        long now=observer.world.getTotalWorldTime();
+        String key=observer.world.provider.getDimension()+":"+enemy.getUniqueID();
         Long last=squadMessages.get(key);
-        if(last!=null&&now-last<200)return;
+        if(last!=null&&now-last<160)return;
         if(squadMessages.size()>=64)squadMessages.clear();
         squadMessages.put(key,now);
-        for(EntityPlayerMP human:victim.getServer().getPlayerList().getPlayers()){
-            if(human.world!=victim.world||human.getDistanceSq(victim)>32*32||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
-            human.sendMessage(new TextComponentString("[AI/отряд] "+victim.getName()+": замечен "+threat.getName()+", держитесь настороже."));
+        boolean vagrant=enemy instanceof net.minecraft.entity.player.EntityPlayer;
+        String[] lines=vagrant?new String[]{"БЛЯТЬ ТУТ ВАГРАНТ, ЕБАШЬ ПО НЕМУ ЕСЛИ ВЫВОЗИМ!","ВАГРАНТ! Братаны, вместе его, по одному не лезьте!","СУКА ВАГРАНТ, держите дистанцию, прикройте!"}:new String[]{"Паразиты рядом, прикройте меня!","Бля, опять паразиты. Держим строй!","Зараженные впереди, не разбегайтесь!"};
+        String line=lines[observer.getRNG().nextInt(lines.length)];
+        for(SurvivorPlayer ally:bots.values())if(ally!=observer&&ally.world==observer.world&&ally.getDistanceSq(observer)<=32*32)ally.squadContact(enemy,enemy.getPosition());
+        for(EntityPlayerMP human:observer.getServer().getPlayerList().getPlayers()){
+            if(human.world!=observer.world||human.getDistanceSq(observer)>48*48||com.x4yi.automata.compat.ManhuntCompat.isHostile(human))continue;
+            human.sendMessage(new TextComponentString("[AI/отряд] "+observer.getName()+": "+line));
         }
     }
     @SubscribeEvent(receiveCanceled=false)
@@ -65,7 +78,7 @@ public final class SurvivorService extends CommandBase {
         net.minecraft.entity.Entity attacker=event.getSource().getTrueSource();
         if(attacker instanceof net.minecraft.entity.EntityLivingBase living && com.x4yi.automata.compat.ManhuntCompat.isHostile(living)) {
             victim.alert(living,living.getPosition());
-            squadAlert(victim,living);
+            observedThreat(victim,living);
             for(SurvivorPlayer ally:bots.values()) if(ally!=victim && ally.world==victim.world && ally.getDistanceSq(victim)<=144 && ally.canEntityBeSeen(victim)) ally.alert(living,living.getPosition());
         } else victim.alert(null,victim.getPosition());
     }
@@ -207,7 +220,7 @@ public final class SurvivorService extends CommandBase {
         }
         if (args.length != 2 || !args[0].equals("spawn") || !args[1].matches("[A-Za-z0-9_]{1,13}")) throw new CommandException(getUsage(sender));
         if (bots.size() >= MAX) throw new CommandException("AI survivor limit reached");
-        String name = "AI_" + args[1];
+        String name = args[1];
         if (args[1].regionMatches(true, 0, "AI_", 0, 3)) throw new CommandException("Use a name without the AI_ prefix");
         if (bots.containsKey(key(name)) || server.getPlayerList().getPlayerByUsername(name) != null) throw new CommandException("Name already in use");
         if (!(sender.getEntityWorld() instanceof WorldServer world)) throw new CommandException("Server world required");
