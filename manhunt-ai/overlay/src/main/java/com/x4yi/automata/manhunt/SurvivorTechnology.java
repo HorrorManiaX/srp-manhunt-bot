@@ -67,7 +67,7 @@ final class SurvivorTechnology {
                     for(ItemStack candidate:ingredient.getMatchingStacks()){
                         if(++variants>6||budget[0]<=0)break;
                         if(candidate.isEmpty()||candidate.getItem()==item&&candidate.getMetadata()==meta)continue;
-                        if(candidate.getItem()==net.minecraft.init.Items.NETHER_STAR||candidate.getItem()==net.minecraft.init.Items.DRAGON_EGG)continue;
+                        if(candidate.getItem()==net.minecraft.init.Items.NETHER_STAR||candidate.getItem()==net.minecraft.item.Item.getItemFromBlock(net.minecraft.init.Blocks.DRAGON_EGG))continue;
                         missing=String.valueOf(candidate.getItem().getRegistryName());
                         if(produce(candidate.getItem(),candidate.getMetadata()==32767?-1:candidate.getMetadata(),table,depth+1,budget,chain))return true;
                     }
