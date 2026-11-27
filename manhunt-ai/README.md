@@ -116,3 +116,9 @@ Inspected actual supplied SRParasites-1.10.9.jar, SRPOverLast-1.0.1.jar, openmod
 - Safe one-block gap parkour: opt-in A* cardinal short jump, no diagonal long jumps, valid head clearance, landing and hunger checks. Never jumps through lava on purpose. Existing ladder, route safety and retreat checks retained.
 - Automatic contained lava pockets on selected sides of an almost complete stronghold, using actual carried stone/obsidian and lava buckets. No forced demolition, no continuous open lava curtain and no guarantee against block-breaking parasites. Gate and escape lanes stay open. No automatic creation of lava. Autonomous placement requires safe nonflammable surroundings and permission checks.
 - Compilation and dedicated server integration for 0.14 must be verified. Existing event participation, complete energy grids, vehicle control and mod-specific weak-point damage are not complete. AI identity remains disclosed.
+
+## Version 0.15 — Server-only telemetry bridge
+
+- Server-only bootstrap and optional remote mod handshake, no upstream custom registries or UI initialization. X4UI stays on the Gradle build/test classpath, not as a required Forge runtime mod. Fixed the 0.14 server-only CI test dependency failure. Actual dedicated server and unmodified client connection still require verification.
+- /manhuntai rosterjson returns actual living agent names and health as a bounded JSON array for RCON. Does not alter authenticated player count. MANHUNT_AI_EVENT JSON records real AI join, leave, chat, kills and deaths for latest.log/SFTP readers. Explicit AI identity in all telemetry. No fabricated login events or player-stat inflation.
+- Fix stale visible-target state and continue hazard scans during evasive movement. Telegram v33 bridge distributed separately because main branch contains an older bot and the deployed bot source is not confirmed. Preserve real human statistics.
