@@ -22,6 +22,7 @@ final class SurvivorEquipment {
     }
     static boolean improve(SurvivorPlayer bot){
         if(!SurvivorCrafting.nearbyBench(bot))return false;
+        if(bot.needsLadder()&&!has(bot,Item.getItemFromBlock(net.minecraft.init.Blocks.LADDER))&&SurvivorCrafting.craftOutput(bot,Item.getItemFromBlock(net.minecraft.init.Blocks.LADDER),true))return true;
         if(bot.getHeldItemOffhand().isEmpty()&&!has(bot,Items.SHIELD)&&SurvivorCrafting.craftOutput(bot,Items.SHIELD,true))return true;
         Item[] iron={Items.IRON_CHESTPLATE,Items.IRON_LEGGINGS,Items.IRON_HELMET,Items.IRON_BOOTS};
         Item[] leather={Items.LEATHER_CHESTPLATE,Items.LEATHER_LEGGINGS,Items.LEATHER_HELMET,Items.LEATHER_BOOTS};
