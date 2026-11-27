@@ -32,6 +32,21 @@ final class SurvivorSquad {
         for(int i=0;i<36;i++){ItemStack s=p.inventory.getStackInSlot(i);if(category(s)==r)n+=s.getCount();}
         return n;
     }
+    static int available(SurvivorPlayer from,SurvivorPlayer to,SurvivorSupplyPolicy.Resource r){
+        return SurvivorSupplyPolicy.transfer(r,from.role(),to.role(),count(from,r),count(to,r));
+    }
+    static int deliver(SurvivorPlayer from,SurvivorPlayer to,SurvivorSupplyPolicy.Resource r){
+        if(from.world!=to.world||from.getDistanceSq(to)>9||!from.canEntityBeSeen(to)||!from.calmForSupply()||!to.isEntityAlive())return 0;
+        int amount=available(from,to,r);
+        for(int i=0;i<36&&amount>0;i++){
+            if(i==from.inventory.currentItem)continue;
+            ItemStack s=from.inventory.getStackInSlot(i);if(category(s)!=r)continue;
+            int n=Math.min(amount,s.getCount());ItemStack copy=s.copy();copy.setCount(n);
+            to.inventory.addItemStackToInventory(copy);int moved=n-copy.getCount();
+            if(moved>0){s.shrink(moved);from.inventory.markDirty();to.inventory.markDirty();return moved;}
+        }
+        return 0;
+    }
     static void coordinate(List<SurvivorPlayer> bots,int offset){
         if(bots.size()<2)return;
         long deadline=System.nanoTime()+1_000_000L;
