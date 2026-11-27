@@ -53,7 +53,7 @@ public final class SurvivorService extends CommandBase {
             if(statusPublished!=null&&current==statusPublished)response.setServerDescription(statusOriginal);
             statusPublished=null;
         }else{
-            statusPublished=statusOriginal.createCopy().appendText("\nИИ-отряд: "+names);
+            statusPublished=statusOriginal.createCopy().appendText("\nКупол (ИИ): "+names);
             response.setServerDescription(statusPublished);
         }
         lastStatusNames=names;
@@ -351,7 +351,7 @@ public final class SurvivorService extends CommandBase {
         try{activate(server,world,bot);roster.markRecruited(k);return true;}
         catch(CommandException e){roster.park(k,bot);throw e;}
     }
-    private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString("[Manhunt AI] "+message));}
+    private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString("[Купол] "+message));}
     private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{
         String name=bot.getName();
         if(!SurvivorFaction.human(bot)){bot.cancelPlanning();throw new CommandException("Cotesia HUMAN selection failed; AI not activated");}
@@ -360,7 +360,7 @@ public final class SurvivorService extends CommandBase {
             if (!world.spawnEntity(bot)) throw new CommandException("AI spawn rejected");
             bots.put(key(name), bot);
             SurvivorTelemetry.event("join",bot,"");
-            announce(server,name+" — ИИ-выживший присоединился к миру.");
+            announce(server,name+" присоединился к миру.");
         } catch (RuntimeException | CommandException e) {
             bots.remove(key(name));bot.cancelPlanning();
             world.removeEntityDangerously(bot);
@@ -389,7 +389,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values())if(bot.isEntityAlive())agents.add(bot.getName());
         sender.sendMessage(new TextComponentString("Участники мира: "+(humans.size()+agents.size())));
         sender.sendMessage(new TextComponentString("Игроки ("+humans.size()+"): "+(humans.isEmpty()?"—":String.join(", ",humans))));
-        sender.sendMessage(new TextComponentString("Агенты ИИ ("+agents.size()+"): "+(agents.isEmpty()?"—":String.join(", ",agents))));
+        sender.sendMessage(new TextComponentString("Купол — агенты ИИ ("+agents.size()+"): "+(agents.isEmpty()?"—":String.join(", ",agents))));
     }
     private static String plainName(String name){
         return name.regionMatches(true,0,"AI_",0,3)?name.substring(3):name;
@@ -408,7 +408,7 @@ public final class SurvivorService extends CommandBase {
         int humanCount=names.size();
         for(SurvivorPlayer bot:bots.values()){
             if(!bot.isEntityAlive())continue;
-            String label=plainName(bot.getName())+" [ИИ]";
+            String label=plainName(bot.getName())+" [Купол]";
             if(!seen.add(label.toLowerCase(java.util.Locale.ROOT)))continue;
             names.add(label);
         }
@@ -429,7 +429,7 @@ public final class SurvivorService extends CommandBase {
         bot.world.removeEntityDangerously(bot);
         broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.REMOVE_PLAYER, bot));
         SurvivorTelemetry.event("leave",bot,"");
-        announce(server,bot.getName()+" — ИИ-выживший покинул мир.");
+        announce(server,bot.getName()+" покинул мир.");
     }
     public void clear(MinecraftServer server) {
         for (SurvivorPlayer bot : new ArrayList<>(bots.values())) {
@@ -444,7 +444,7 @@ public final class SurvivorService extends CommandBase {
             SurvivorPlayer conflict=bots.get(key(player.getName()));
             if(conflict!=null&&conflict.getName().equalsIgnoreCase(player.getName())){population.suppress(conflict.getName());remove(player.getServer(),conflict);}
             for (SurvivorPlayer bot : bots.values()) player.connection.sendPacket(new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
-            player.sendMessage(new TextComponentString("В мире действуют игровые персонажи под управлением ИИ. Состав участников: /participants"));
+            player.sendMessage(new TextComponentString("Купол — отряд под управлением ИИ. Состав участников: /participants"));
         }
     }
     private int nextHumanHelp;
