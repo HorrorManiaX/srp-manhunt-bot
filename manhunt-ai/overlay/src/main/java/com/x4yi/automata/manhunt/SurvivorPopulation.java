@@ -19,9 +19,10 @@ final class SurvivorPopulation {
     private final Map<String,Long> cooldown=new HashMap<>();
     private final Map<String,Integer> deaths=new HashMap<>();
     private Configuration config;
-    private boolean enabled;
+    private boolean enabled, siegeKit;
     private int target,failures;
-    private long tick,nextJoin=200;
+    private final Random random=new Random();
+    private long tick,nextJoin=SurvivorPopulationPolicy.joinDelay(random);
     private BlockPos camp;
     private int sample;
     void init(){
@@ -30,6 +31,7 @@ final class SurvivorPopulation {
         config.load();
         enabled=config.getBoolean("enabled","population",true,"Automatically start clearly labelled AI survivors in loaded overworld areas.");
         target=config.getInt("target","population",4,0,6,"Maximum desired total active AI survivors.");
+        siegeKit=config.getBoolean("siegeStarterKit","population",true,"One-time equipped survivor kit for already infected worlds; no repeated kit after death.");
         if(config.hasChanged())config.save();
     }
     boolean enabled(){init();return enabled;}
@@ -38,7 +40,7 @@ final class SurvivorPopulation {
         init();enabled=value;target=SurvivorPopulationPolicy.capacity(count);
         config.get("population","enabled",true).set(enabled);
         config.get("population","target",4).set(target);config.save();
-        if(value){suppressed.clear();nextJoin=tick+40;failures=0;}
+        if(value){suppressed.clear();nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);failures=0;}
     }
     void suppress(String name){suppressed.add(name.toLowerCase(Locale.ROOT));}
     void lost(String name,boolean death){
@@ -46,7 +48,7 @@ final class SurvivorPopulation {
         if(death){int n=deaths.merge(k,1,Integer::sum);cooldown.put(k,tick+SurvivorPopulationPolicy.deathDelay(n));}
         else cooldown.put(k,tick+6000);
     }
-    void reset(){config=null;tick=0;nextJoin=200;failures=0;camp=null;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
+    void reset(){config=null;tick=0;nextJoin=SurvivorPopulationPolicy.joinDelay(random);failures=0;camp=null;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
     void tick(MinecraftServer server,SurvivorService service,boolean stressed){
         tick+=20;if(tick<nextJoin)return;init();
         if(!SurvivorPopulationPolicy.mayJoin(enabled,stressed,service.activeCount(),target,tick,nextJoin))return;
@@ -65,7 +67,7 @@ final class SurvivorPopulation {
                 if(service.parkedElsewhere(server,k))continue;
                 BlockPos site=pickSite(world,service);
                 if(site==null)break;
-                if(service.autoSpawn(server,world,full,site)){if(camp==null)camp=site;success();return;}
+                if(service.autoSpawn(server,world,full,site,siegeKit)){if(camp==null)camp=site;success();return;}
             }catch(Exception | LinkageError ex){
                 cooldown.put(k,tick+6000);
                 AutomataMod.LOGGER.warn("Manhunt AI population candidate failed: "+full,ex);
@@ -78,7 +80,7 @@ final class SurvivorPopulation {
         nextJoin=tick+6000;
         if(++failures==1)AutomataMod.LOGGER.warn("Manhunt AI population director temporarily paused",ex);
     }
-    private void success(){failures=0;nextJoin=tick+240;}
+    private void success(){failures=0;nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);}
     private BlockPos pickSite(WorldServer world,SurvivorService service){
         BlockPos origin=camp!=null?camp:service.overworldCamp(world);
         if(origin!=null)camp=origin;
@@ -98,7 +100,7 @@ final class SurvivorPopulation {
             int walkable=0;
             for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)if(SurvivorService.standable(world,p.add(x,0,z)))walkable++;
             if(walkable<12)continue;
-            if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(12),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
+            if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(24),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
             if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(3)).isEmpty())continue;
             return p;
         }
