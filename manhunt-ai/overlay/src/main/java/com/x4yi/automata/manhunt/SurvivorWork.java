@@ -20,7 +20,7 @@ final class SurvivorWork {
     private final BlockPos home;
     private final SurvivorProgression.Role role;
     private final SurvivorTechnology technology;
-    private int nextTech,nextDefenseMaterials;
+    private int nextTech,nextDefenseMaterials,nextEquipment;
     private boolean industry;
     private int defenseDeficit;
     private net.minecraft.block.Block requestedOre;
@@ -160,6 +160,10 @@ final class SurvivorWork {
         if(target!=null && (age>=deadline||!matches(target,task))){clear();}
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
+        if(age>=nextEquipment){
+            nextEquipment=age+100;
+            if(SurvivorEquipment.improve(bot)){memory().count(bot.getUniqueID(),"crafted");return;}
+        }
         if(age>=nextDefenseMaterials){
             nextDefenseMaterials=age+200;
             defenseDeficit=SurvivorDefense.neededBlocks(bot.missingWallBlocks(),bot.constructionStock());
