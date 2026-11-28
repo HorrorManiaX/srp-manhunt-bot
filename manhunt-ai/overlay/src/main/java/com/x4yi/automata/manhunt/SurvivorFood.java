@@ -29,7 +29,7 @@ final class SurvivorFood {
     }
     private boolean allowed(EntityAnimal animal){
         if(animal==null||!animal.isEntityAlive()||animal.isChild()||animal.hasCustomName()||animal.isInLove()||animal.getLeashed()
-            ||animal.world!=bot.world||animal.getPosition().distanceSq(bot.homePosition())>144
+            ||animal.world!=bot.world||animal.getPosition().distanceSq(bot.homePosition())>128*128
             ||!bot.world.isBlockLoaded(animal.getPosition())||!SurvivorPermissions.allowed(bot,animal.getPosition(),false))return false;
         if(!(animal instanceof EntityCow||animal instanceof EntityPig||animal instanceof EntityChicken||animal instanceof EntitySheep))return false;
         // A local fence/wall or nearby authenticated human is a reason to leave the animal alone.
@@ -44,8 +44,8 @@ final class SurvivorFood {
         return true;
     }
     void plan(int age,boolean stressed){
-        if(stressed||!bot.autonomousEnabled()||bot.getFoodStats().getFoodLevel()>=18||provisions()>=3){interrupt();return;}
-        if(quarry!=null&&(age>=expires||!quarry.isEntityAlive()||quarry.getPosition().distanceSq(bot.homePosition())>144)){interrupt();}
+        if(stressed||!bot.autonomousEnabled()||provisions()>=3){interrupt();return;}
+        if(quarry!=null&&(age>=expires||!quarry.isEntityAlive()||quarry.getPosition().distanceSq(bot.homePosition())>128*128)){interrupt();}
         if(quarry!=null||age<nextScan)return;
         nextScan=age+100;
         if(!bot.furnaceBusy()&&bot.hasFurnaceStation()){
@@ -59,7 +59,7 @@ final class SurvivorFood {
             }
         }
         if(SurvivorCrafting.nearbyBench(bot)&&SurvivorCrafting.craftOutput(bot,Items.BREAD,true))return;
-        if(bot.bestMelee()<0)return;
+        if(bot.bestMelee()<0&&bot.getFoodStats().getFoodLevel()>=12)return;
         double best=144;int tested=0;
         for(EntityAnimal animal:bot.world.getEntitiesWithinAABB(EntityAnimal.class,bot.getEntityBoundingBox().grow(12))){
             if(++tested>12)break;
@@ -73,8 +73,7 @@ final class SurvivorFood {
         if(!quarry.isEntityAlive()){interrupt();return false;}
         if(bot.getDistanceSq(quarry)>6.25||!bot.canEntityBeSeen(quarry))return false;
         if(!allowed(quarry)){interrupt();return false;}
-        int slot=bot.bestMelee();if(slot<0){interrupt();return false;}
-        bot.equipInventorySlot(slot);bot.faceEntityForFood(quarry);
+        int slot=bot.bestMelee();if(slot>=0)bot.equipInventorySlot(slot);else if(!bot.getHeldItemMainhand().isEmpty()){interrupt();return false;}bot.faceEntityForFood(quarry);
         bot.moveForward=0;bot.moveStrafing=0;
         if(age>=nextHit&&bot.getCooledAttackStrength(0)>=.9f){
             nextHit=age+20;bot.attackTargetEntityWithCurrentItem(quarry);bot.swingArm(EnumHand.MAIN_HAND);
