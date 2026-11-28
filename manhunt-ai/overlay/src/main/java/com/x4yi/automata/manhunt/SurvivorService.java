@@ -123,23 +123,28 @@ public final class SurvivorService extends CommandBase {
         if(!valid(turn,bot,player))return;
         emit(turn,bot,turn.reply());
     }
-    private net.minecraft.util.text.ITextComponent statusOriginal,statusPublished;
-    private String lastStatusNames="";
+    // Advertised participants only; never insert agents into authenticated PlayerList.
+    private net.minecraft.network.ServerStatusResponse.Players publishedPlayers;
+    private java.util.List<GameProfile> publishedProfiles=java.util.Collections.emptyList();
     private void updateAgentStatus(MinecraftServer server){
         var response=server.getServerStatusResponse();
-        var current=response.getServerDescription();
-        if(current==null)return;
-        if(current!=statusPublished){statusOriginal=current;statusPublished=null;lastStatusNames="";}
-        String names=bots.values().stream().filter(SurvivorPlayer::isEntityAlive).map(SurvivorPlayer::getName).collect(java.util.stream.Collectors.joining(", "));
-        if(names.equals(lastStatusNames))return;
-        if(names.isEmpty()){
-            if(statusPublished!=null&&current==statusPublished)response.setServerDescription(statusOriginal);
-            statusPublished=null;
-        }else{
-            statusPublished=statusOriginal.createCopy().appendText("\n"+names);
-            response.setServerDescription(statusPublished);
-        }
-        lastStatusNames=names;
+        if(response==null||server.getPlayerList()==null)return;
+        var vanilla=response.getPlayers();
+        java.util.LinkedHashMap<UUID,GameProfile> profiles=new java.util.LinkedHashMap<>();
+        for(EntityPlayerMP p:server.getPlayerList().getPlayers())profiles.put(p.getUniqueID(),p.getGameProfile());
+        int humans=profiles.size();
+        for(SurvivorPlayer bot:bots.values())if(bot.isEntityAlive())profiles.putIfAbsent(bot.getUniqueID(),bot.getGameProfile());
+        // If vanilla has already replaced the last augmented response and no agents are active, leave it alone.
+        if(profiles.size()==humans&&vanilla!=publishedPlayers){publishedPlayers=null;publishedProfiles=java.util.Collections.emptyList();return;}
+        java.util.List<GameProfile> current=new ArrayList<>(profiles.values());
+        int max=Math.max(server.getPlayerList().getMaxPlayers(),current.size());
+        if(vanilla!=null&&vanilla==publishedPlayers&&current.equals(publishedProfiles)&&vanilla.getMaxPlayers()==max)return;
+        var merged=new net.minecraft.network.ServerStatusResponse.Players(max,current.size());
+        java.util.List<GameProfile> sample=new ArrayList<>(current);
+        java.util.Collections.shuffle(sample);
+        merged.setPlayers(sample.subList(0,Math.min(12,sample.size())).toArray(new GameProfile[0]));
+        response.setPlayers(merged);
+        publishedPlayers=merged;publishedProfiles=current;
     }
     private double meanAiMs;
     private long lastTickNanos;
@@ -498,7 +503,11 @@ public final class SurvivorService extends CommandBase {
         try{activate(server,world,bot);roster.markRecruited(k);return true;}
         catch(CommandException e){roster.park(k,bot);throw e;}
     }
-    private static void announce(MinecraftServer server,String message){for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(new TextComponentString(message));}
+    private static void announceLifecycle(MinecraftServer server,SurvivorPlayer bot,boolean joined){
+        var message=new net.minecraft.util.text.TextComponentTranslation(joined?"multiplayer.player.joined":"multiplayer.player.left",bot.getName());
+        message.getStyle().setColor(net.minecraft.util.text.TextFormatting.YELLOW);
+        for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(message.createCopy());
+    }
     private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{
         String name=bot.getName();
         // Validate before world insertion: vanilla can replace an existing entity on a UUID collision.
@@ -514,7 +523,8 @@ public final class SurvivorService extends CommandBase {
             if (!world.spawnEntity(bot)) throw new CommandException("AI spawn rejected");
             bots.put(key(name), bot);
             SurvivorTelemetry.event("join",bot,"");
-            announce(server,name+" присоединился к миру.");
+            announceLifecycle(server,bot,true);
+            updateAgentStatus(server);
         } catch (RuntimeException | CommandException e) {
             bots.remove(key(name));bot.cancelPlanning();
             world.removeEntityDangerously(bot);
@@ -534,7 +544,7 @@ public final class SurvivorService extends CommandBase {
         }
         clear(server);population.reset();
         if(server!=null)updateAgentStatus(server);
-        statusOriginal=null;statusPublished=null;lastStatusNames="";
+        publishedPlayers=null;publishedProfiles=java.util.Collections.emptyList();
         if(server!=null)for(WorldServer world:server.worlds)if(world!=null)world.getPerWorldStorage().saveAllData();
     }
     void showParticipants(MinecraftServer server,ICommandSender sender){
@@ -550,8 +560,7 @@ public final class SurvivorService extends CommandBase {
     }
     @SubscribeEvent
     public void onRconList(net.minecraftforge.event.CommandEvent event){
-        if(!(event.getSender() instanceof net.minecraft.network.rcon.RConConsoleSource)
-            ||!"list".equals(event.getCommand().getName())||event.getParameters().length!=0)return;
+        if(!"list".equals(event.getCommand().getName())||event.getParameters().length!=0)return;
         MinecraftServer server=event.getSender().getServer();
         if(server==null||bots.isEmpty())return;
         java.util.List<String> names=new ArrayList<>();
@@ -583,7 +592,8 @@ public final class SurvivorService extends CommandBase {
         bot.world.removeEntityDangerously(bot);
         broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.REMOVE_PLAYER, bot));
         SurvivorTelemetry.event("leave",bot,"");
-        announce(server,bot.getName()+" покинул мир.");
+        announceLifecycle(server,bot,false);
+        updateAgentStatus(server);
     }
     public void clear(MinecraftServer server) {
         for (SurvivorPlayer bot : new ArrayList<>(bots.values())) {
