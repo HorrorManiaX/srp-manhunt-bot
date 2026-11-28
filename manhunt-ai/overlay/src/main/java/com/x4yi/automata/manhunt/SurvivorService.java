@@ -262,7 +262,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | progress <name> | population status | park <name> | resume <name> | parked | pause | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | progress <name> | population status | park <name> | resume <name> [x y z] | parked | pause | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==1&&args[0].equals("rosterjson")){
@@ -341,26 +341,24 @@ public final class SurvivorService extends CommandBase {
             population.suppress(bot.getName());
             sender.sendMessage(new TextComponentString("AI parked: "+args[1]));return;
         }
-        if(args.length==2 && args[0].equals("resume")){
+        if((args.length==2||args.length==5)&&args[0].equals("resume")){
             if(!(sender.getEntityWorld() instanceof WorldServer world))throw new CommandException("Server world required");
             String k=key(args[1]);
-            SurvivorRoster roster=SurvivorRoster.get(world);
-            var snapshot=roster.snapshot(k);
+            var snapshot=SurvivorRoster.get(world).snapshot(k);
             if(snapshot==null)throw new CommandException("No snapshot in this dimension");
-            String savedName=snapshot.getString("name");
-            String name=plainName(savedName);
-            if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||bots.size()>=MAX||bots.containsKey(k)||server.getPlayerList().getPlayerByUsername(name)!=null)throw new CommandException("AI identity or capacity conflict");
-            BlockPos pos=SurvivorRoster.position(snapshot),home=SurvivorRoster.home(snapshot);
-            if(!standable(world,pos))throw new CommandException("Saved position unavailable; load its chunk and clear the position first");
-            UUID uuid=SurvivorRoster.uuid(snapshot);
-            SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
-            bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);
-            SurvivorRoster.restore(bot,snapshot);
-            // Consume snapshot before activating; put it back only if activation fails.
-            roster.forget(k);
-            try{activate(server,world,bot);}
-            catch(CommandException ex){roster.park(k,bot);throw ex;}
-            sender.sendMessage(new TextComponentString("Resumed "+name+" (AI)"));return;
+            BlockPos saved=SurvivorRoster.position(snapshot);
+            BlockPos pos=args.length==5?parseBlockPos(sender,args,2,false):saved;
+            boolean relocated=args.length==5;
+            if(args.length==2&&!resumeSite(world,pos)){
+                BlockPos anchor=sender instanceof EntityPlayerMP?sender.getPosition():overworldCamp(world);
+                if(anchor==null)anchor=broAnchor(world);
+                if(anchor!=null)pos=nearResumeSite(world,anchor);
+                if(pos==null||!resumeSite(world,pos))throw new CommandException("Saved position unavailable at "+saved+"; use /manhuntai resume "+args[1]+" <x> <y> <z> in a safe loaded area");
+                relocated=true;
+            }
+            if(!resumeSite(world,pos))throw new CommandException("Resume position unsafe, occupied or unloaded: "+pos);
+            if(!restoreParked(server,world,k,pos,relocated))throw new CommandException("AI identity, permissions or capacity conflict; snapshot preserved");
+            sender.sendMessage(new TextComponentString("Resumed "+args[1]+" at "+pos+(relocated?" (relocated; inventory preserved)":"")));return;
         }
         if((args.length==2&&args[0].equals("furnace"))||(args.length==3&&args[0].equals("smelt"))){
             SurvivorPlayer bot=bots.get(key(args[1]));
@@ -491,17 +489,43 @@ public final class SurvivorService extends CommandBase {
         bot.autonomous(true);bot.industry(true);
         activate(server,world,bot);roster.markRecruited(k);return true;
     }
-    boolean autoResume(MinecraftServer server,WorldServer world,String k)throws CommandException{
+    private boolean resumeSite(WorldServer world,BlockPos pos){
+        if(pos==null||!standable(world,pos)||occupied(world,pos))return false;
+        if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(1)).isEmpty())return false;
+        return world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(12),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty();
+    }
+    private BlockPos nearResumeSite(WorldServer world,BlockPos origin){
+        for(int radius:new int[]{4,6,8,12}){
+            for(int i=0;i<8;i++){
+                double angle=i*Math.PI/4;
+                BlockPos column=origin.add(Math.round(Math.cos(angle)*radius),0,Math.round(Math.sin(angle)*radius));
+                for(int dy:new int[]{0,1,-1,2,-2}){
+                    BlockPos p=column.up(dy);
+                    if(resumeSite(world,p)&&!homeTooClose(world,p)&&SurvivorTerrain.safeExits(world,p)>0)return p;
+                }
+            }
+        }
+        return null;
+    }
+    boolean autoResume(MinecraftServer server,WorldServer world,String k,BlockPos fallback)throws CommandException{
+        var n=SurvivorRoster.get(world).snapshot(k);if(n==null)return false;
+        BlockPos pos=SurvivorRoster.position(n);
+        if(resumeSite(world,pos)&&restoreParked(server,world,k,pos,false))return true;
+        return fallback!=null&&resumeSite(world,fallback)&&restoreParked(server,world,k,fallback,true);
+    }
+    private boolean restoreParked(MinecraftServer server,WorldServer world,String k,BlockPos pos,boolean relocated)throws CommandException{
         SurvivorRoster roster=SurvivorRoster.get(world);var n=roster.snapshot(k);
-        if(n==null)return false;
-        String savedName=n.getString("name"),name=plainName(savedName);BlockPos pos=SurvivorRoster.position(n),home=SurvivorRoster.home(n);
-        if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||bots.size()>=MAX||!standable(world,pos)||occupied(world,pos)||!world.getEntitiesWithinAABB(net.minecraft.entity.EntityLivingBase.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(16),e->e.isEntityAlive()&&com.x4yi.automata.compat.ManhuntCompat.isHostile(e)).isEmpty())return false;
-        UUID uuid=SurvivorRoster.uuid(n);
-        SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),home);
-        bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);SurvivorRoster.restore(bot,n);
-        roster.forget(k);
-        try{activate(server,world,bot);roster.markRecruited(k);return true;}
-        catch(CommandException e){roster.park(k,bot);throw e;}
+        if(n==null||!resumeSite(world,pos))return false;
+        String name=plainName(n.getString("name"));
+        if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||bots.size()>=MAX)return false;
+        BlockPos home=relocated?pos:SurvivorRoster.home(n);
+        SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(SurvivorRoster.uuid(n),name),home);
+        bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);
+        SurvivorRoster.restore(bot,n);
+        if(relocated&&!SurvivorPermissions.allowed(bot,pos,true)){bot.cancelPlanning();return false;}
+        // Keep the original snapshot until activation actually succeeds.
+        activate(server,world,bot);
+        roster.forget(k);roster.markRecruited(k);return true;
     }
     private static void announceLifecycle(MinecraftServer server,SurvivorPlayer bot,boolean joined){
         var message=new net.minecraft.util.text.TextComponentTranslation(joined?"multiplayer.player.joined":"multiplayer.player.left",bot.getName());
