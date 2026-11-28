@@ -42,17 +42,22 @@ final class SurvivorFurnace {
         goal=item;expires=0;status="queued";return true;
     }
     void placed(BlockPos pos){
-        if(station!=null&&owned!=null&&!owned.isInvalid())return;
+        if(validStation())return;
         if(!bot.world.isBlockLoaded(pos))return;
         if(bot.world.getBlockState(pos).getBlock()==Blocks.FURNACE&&bot.world.getTileEntity(pos) instanceof TileEntityFurnace furnace){
             station=pos.toImmutable();owned=furnace;ownFuel=false;
         }
     }
     boolean validStation(){
-        return station!=null&&bot.world.isBlockLoaded(station)&&owned!=null&&!owned.isInvalid()&&bot.world.getTileEntity(station)==owned
+        return station!=null&&station.distanceSq(bot.getPosition())<40*40&&bot.world.isBlockLoaded(station)&&owned!=null&&!owned.isInvalid()&&bot.world.getTileEntity(station)==owned
             &&SurvivorPermissions.interact(bot,station);
     }
-    private boolean emptyStation(){ItemStack fuel=owned.getStackInSlot(1);return owned.getStackInSlot(0).isEmpty()&&owned.getStackInSlot(2).isEmpty()&&(fuel.isEmpty()||(ownFuel&&fuel.getItem()==Items.COAL&&fuel.getCount()==1));}
+    static boolean usableFuel(ItemStack s){
+        if(s.isEmpty())return false;
+        Item item=s.getItem();
+        return (item==Items.COAL||item==Item.getItemFromBlock(Blocks.LOG)||item==Item.getItemFromBlock(Blocks.LOG2)||item==Item.getItemFromBlock(Blocks.PLANKS))&&TileEntityFurnace.getItemBurnTime(s)>=200;
+    }
+    private boolean emptyStation(){ItemStack fuel=owned.getStackInSlot(1);return owned.getStackInSlot(0).isEmpty()&&owned.getStackInSlot(2).isEmpty()&&(fuel.isEmpty()||(ownFuel&&usableFuel(fuel)&&fuel.getCount()==1));}
     private void stop(String reason){goal=null;running=false;expected=ItemStack.EMPTY;destination=null;status=reason;}
     private BlockPos adjacent(BlockPos p){
         BlockPos best=null;double d=Double.MAX_VALUE;
@@ -71,9 +76,9 @@ final class SurvivorFurnace {
         for(int i=0;i<36;i++)if(bot.inventory.getStackInSlot(i).getItem()==item&&!bot.inventory.getStackInSlot(i).isEmpty()){found=true;break;}
         if(!found)return false;
         for(EnumFacing face:EnumFacing.HORIZONTALS){
-            BlockPos pos=bot.homePosition().offset(face,3);
+            BlockPos pos=bot.getPosition().offset(face,2);
             if(!bot.world.isBlockLoaded(pos)||!bot.world.isBlockLoaded(pos.down())||!bot.world.isAirBlock(pos)||!CellClassifier.isSolidSupport(bot.world,pos.down()))continue;
-            if(bot.requestBuild(pos,new ResourceLocation("minecraft:furnace")))return true;
+            if(bot.requestFieldFurnace(pos))return true;
         }
         return false;
     }
@@ -109,10 +114,10 @@ final class SurvivorFurnace {
             ItemStack s=bot.inventory.getStackInSlot(i);
             if(s.isEmpty())continue;
             if(input<0&&s.getItem()==goal&&!FurnaceRecipes.instance().getSmeltingResult(s).isEmpty())input=i;
-            if(fuel<0&&s.getItem()==Items.COAL&&TileEntityFurnace.isItemFuel(s))fuel=i;
+            if(usableFuel(s)&&(fuel<0||s.getItem()==Items.COAL&&bot.inventory.getStackInSlot(fuel).getItem()!=Items.COAL))fuel=i;
         }
         boolean needFuel=owned.getField(0)<200&&owned.getStackInSlot(1).isEmpty();
-        if(input<0||(needFuel&&(fuel<0||input==fuel))){status="needs input and coal";return;}
+        if(input<0||(needFuel&&(fuel<0||input==fuel))){status="needs input and fuel";return;}
         ItemStack source=bot.inventory.getStackInSlot(input);
         expected=FurnaceRecipes.instance().getSmeltingResult(source).copy();
         owned.setInventorySlotContents(0,source.splitStack(1));
