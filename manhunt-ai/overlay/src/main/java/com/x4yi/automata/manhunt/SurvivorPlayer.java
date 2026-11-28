@@ -41,6 +41,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private int reloadUntil, nextReload;
     private AtomicBoolean cancelled = new AtomicBoolean();
     private CompletableFuture<PathResult> pending;
+    private int emptyRoutes,routeResets;
+    private BlockPos submittedGoal;
+    private String navigation="idle";
     private PathResult path = PathResult.EMPTY;
     private int step, age, nextPlan, nextAttack;
     private int nextScan, nextLootScan, nextInventoryScan, alertUntil, nextEvade;
@@ -233,7 +236,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             items.append(i).append(":").append(s.getItem().getRegistryName()).append("@").append(s.getMetadata()).append(" x").append(s.getCount());
         }
         return getName()+" | HP="+getHealth()+"/"+getMaxHealth()+" hunger="+getFoodStats().getFoodLevel()+" | position="+getPosition()+" home="+home+" dimension="+world.provider.getDimension()+"\n"
-            +activity()+" | auto="+autonomousEnabled()+" | industry="+industryEnabled()+" | search="+work.searchStatus()+" | "+infrastructureStatus()+"\n"
+            +activity()+" | auto="+autonomousEnabled()+" | industry="+industryEnabled()+" | search="+work.searchStatus()+" | navigation="+navigation+" empty="+emptyRoutes+" resets="+routeResets+" goal="+plannedGoal+" | "+infrastructureStatus()+"\n"
             +"Historical tracked counters: "+SurvivorMemory.get((WorldServer)world).progress(getUniqueID())+"\nInventory: "+(items.length()==0?"empty":items.toString());
     }
     void recordVictory(){
@@ -659,16 +662,19 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         if(moveForward!=0 && Math.abs(posX-lastX)+Math.abs(posZ-lastZ)<.025) stuckTicks++; else stuckTicks=0;
         lastX=posX;lastZ=posZ;
-        if(stuckTicks>16) {if(step<path.length())markRouteFailure(path.getStep(step));invalidateRoute();stuckTicks=0;}
+        if(stuckTicks>16) {if(step<path.length())markRouteFailure(path.getStep(step));routeResets++;navigation="stuck";if(action==SurvivorBrain.Action.PATROL)work.routeFailed(plannedGoal);invalidateRoute();stuckTicks=0;}
         if (pending != null && pending.isDone()) {
             try { path = pending.getNow(PathResult.EMPTY); } catch (RuntimeException e) { path = PathResult.EMPTY; }
             pending = null; step = 0;
+            if(path.length()==0&&submittedGoal!=null&&getDistanceSqToCenter(submittedGoal)>9){emptyRoutes++;navigation="no route";if(action==SurvivorBrain.Action.PATROL)work.routeFailed(submittedGoal);nextPlan=age+10;}
+            else navigation="path steps="+path.length();
         }
         if (age >= nextPlan && pending == null && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
             nextPlan=age+(stressed?60:retreat?15:30)+rand.nextInt(10);
             BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?findBuildApproach():action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():jobGoal!=null?jobGoal:patrolGoal();
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
+                submittedGoal=goal;navigation="planning";
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
                         new PathfindingSettings(false,getFoodStats().getFoodLevel()>8,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L,true),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
             }
@@ -693,7 +699,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
                 swingArm(EnumHand.MAIN_HAND);
             } else if(getHeldItemOffhand().getItem()==Items.SHIELD && !isHandActive() && (age<nextAttack||getCooledAttackStrength(0)<.9F)) setActiveHand(EnumHand.OFF_HAND);
             combatFootwork(target,false);
-        } else { followPath(); if(retreat && moveForward==0)escapeStep(); if(retreat && moveForward>0 && getFoodStats().getFoodLevel()>6) setSprinting(true); }
+        } else { followPath(); if(!retreat&&action==SurvivorBrain.Action.PATROL&&moveForward==0&&step>=path.length()&&jobGoal!=null)walkLocal(jobGoal); if(retreat && moveForward==0)escapeStep(); if(retreat && moveForward>0 && getFoodStats().getFoodLevel()>6) setSprinting(true); }
         if (action==SurvivorBrain.Action.EAT && foodSlot >= 0 && inventory.getStackInSlot(foodSlot).getItem() instanceof ItemFood && !inventory.getStackInSlot(foodSlot).isEmpty()) {
             if(isHandActive()&&getActiveItemStack().getItem()==Items.BOW)cancelActiveUse();
             foodSlot=equipInventorySlot(foodSlot); moveForward = 0;
@@ -838,6 +844,21 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         setSprinting(true);moveForward=distance<.45?0:.85f;return true;
     }
+    private void walkLocal(BlockPos goal){
+        if(getDistanceSqToCenter(goal)<2.25)return;
+        BlockPos here=getPosition(),best=null;double score=here.distanceSq(goal);
+        for(EnumFacing f:EnumFacing.HORIZONTALS)for(int dy:new int[]{0,1}){
+            BlockPos p=here.offset(f).up(dy);
+            if(!standable(p)||p.distanceSq(goal)>=score)continue;
+            if(dy==0&&!SurvivorTerrain.safeStep(world,posX,posY,posZ,f.getXOffset()*.65,f.getZOffset()*.65))continue;
+            if(dy==1&&(!world.isBlockLoaded(here.up(2))||!CellClassifier.isPassable(world,here.up(2))))continue;
+            best=p;score=p.distanceSq(goal);
+        }
+        if(best!=null){float yaw=(float)Math.toDegrees(Math.atan2(best.getZ()+.5-posZ,best.getX()+.5-posX))-90;
+            lookAt(best.getX()+.5,posY+getEyeHeight(),best.getZ()+.5);
+            if(Math.abs(MathHelper.wrapDegrees(yaw-rotationYaw))<25){moveForward=.55f;if(onGround&&best.getY()>here.getY())jump();navigation="local step";}
+        }
+    }
     private void followPath() {
         while(step<path.length()){
             long packed=path.getStep(step);
@@ -846,7 +867,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             double distance=Math.hypot(dx,dz);
             if(distance<.30&&Math.abs(dy)<.55){step++;continue;}
             byte action=path.getAction(step);
-            if(action==PathNodeAction.CLIMB){if(!climbRoute(p)){markRouteFailure(packed);invalidateRoute();}return;}
+            if(action==PathNodeAction.CLIMB){if(!climbRoute(p)){markRouteFailure(packed);routeResets++;invalidateRoute();}return;}
             if(!world.isBlockLoaded(p)||action>PathNodeAction.FALL||SurvivorTerrain.hazardous(world,p)||SurvivorTerrain.hazardous(world,p.up())||SurvivorTerrain.hazardous(world,p.down())){
                 markRouteFailure(packed);invalidateRoute();return;
             }
