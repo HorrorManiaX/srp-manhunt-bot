@@ -25,7 +25,7 @@ final class SurvivorPopulation {
     private long tick,nextJoin=SurvivorPopulationPolicy.joinDelay(random);
     private BlockPos camp;
     private boolean reinforcement;
-    private int sample;
+    private int sample,candidateCursor;
     private String status="initializing";
     String status(){return status+"; next_attempt_ticks="+Math.max(0,nextJoin-tick)+"; failures="+failures;}
     void init(){
@@ -53,7 +53,7 @@ final class SurvivorPopulation {
         if(death){int n=deaths.merge(k,1,Integer::sum);cooldown.put(k,tick+SurvivorPopulationPolicy.deathDelay(n));}
         else cooldown.put(k,tick+6000);
     }
-    void reset(){config=null;tick=0;nextJoin=SurvivorPopulationPolicy.joinDelay(random);failures=0;camp=null;reinforcement=false;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
+    void reset(){config=null;tick=0;nextJoin=SurvivorPopulationPolicy.joinDelay(random);failures=0;camp=null;reinforcement=false;sample=0;candidateCursor=0;suppressed.clear();cooldown.clear();deaths.clear();}
     void tick(MinecraftServer server,SurvivorService service,boolean stressed){
         tick+=20;if(tick<nextJoin)return;init();
         if(!SurvivorPopulationPolicy.mayJoin(enabled,stressed,service.activeCount(),target,tick,nextJoin)){status=!enabled?"disabled":stressed?"server load":service.activeCount()>=target?"full":"waiting";return;}
@@ -61,21 +61,25 @@ final class SurvivorPopulation {
         if(world==null){status="overworld unavailable";nextJoin=tick+200;return;}
         status="no eligible candidate";
         // Exactly one candidate attempt per pass. Restore only loaded snapshots.
-        for(String name:NAMES){
-            String full=name,k=canonical(full);
+        for(int attempt=0;attempt<NAMES.length;attempt++){
+            String full=NAMES[Math.floorMod(candidateCursor++,NAMES.length)],k=canonical(full);
             if(suppressed.contains(k)||cooldown.getOrDefault(k,0L)>tick||service.activeName(full)||(server.getPlayerList().getPlayerByUsername(full)!=null||server.getPlayerList().getPlayerByUsername("AI_"+full)!=null))continue;
             try{
                 SurvivorRoster roster=SurvivorRoster.get(world);
                 if(roster.contains(k)){
-                    if(service.autoResume(server,world,k)){success();return;}
-                    continue;
+                    if(service.autoResume(server,world,k,null)){success();return;}
+                    BlockPos fallback=pickSite(world,service);
+                    if(fallback!=null&&service.autoResume(server,world,k,fallback)){camp=fallback;success();return;}
+                    status="parked "+full+": saved site unavailable; no permitted safe fallback";
+                    break;
                 }
-                if(service.parkedElsewhere(server,k))continue;
+                if(service.parkedElsewhere(server,k)){status="parked "+full+" in another dimension";continue;}
                 BlockPos site=pickSite(world,service);
                 if(site==null){status="no safe loaded site for "+full;break;}
                 if(service.autoSpawn(server,world,full,site,siegeKit)){if(camp==null)camp=site;success();return;}status="spawn denied for "+full;
             }catch(Exception | LinkageError ex){
                 cooldown.put(k,tick+6000);
+                status="candidate "+full+" failed: "+ex.getClass().getSimpleName();
                 AutomataMod.LOGGER.warn("Manhunt AI population candidate failed: "+full,ex);
             }
             break;
