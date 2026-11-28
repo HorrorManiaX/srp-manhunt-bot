@@ -239,6 +239,7 @@ public final class SurvivorService extends CommandBase {
     public void onDeath(net.minecraftforge.event.entity.living.LivingDeathEvent event){
         if(!event.getEntityLiving().world.isRemote&&event.getEntityLiving() instanceof SurvivorPlayer bot&&bots.get(key(bot.getName()))==bot){
             SurvivorMemory.get((WorldServer)bot.world).count(bot.getUniqueID(),"deaths");
+            SurvivorRoster.get((WorldServer)bot.world).forget(key(bot.getName()));
             SurvivorTelemetry.event("death",bot,event.getSource().getDeathMessage(bot).getUnformattedText());
         }
         if(event.getEntityLiving().world.isRemote)return;
@@ -438,11 +439,11 @@ public final class SurvivorService extends CommandBase {
             for (SurvivorPlayer bot : bots.values()) sender.sendMessage(new TextComponentString(bot.getName() + " " + bot.activity() + " HP=" + bot.getHealth()+" "+bot.infrastructureStatus()));
             return;
         }
-        if (args.length == 1 && args[0].equals("clear")) { population.configure(false,population.target());clear(server); return; }
+        if (args.length == 1 && args[0].equals("clear")) { population.configure(false,population.target());for(SurvivorPlayer b:bots.values())SurvivorRoster.get((WorldServer)b.world).forget(key(b.getName()));clear(server); return; }
         if (args.length == 2 && args[0].equals("remove")) {
             SurvivorPlayer bot = bots.get(key(args[1]));
             if (bot == null) throw new CommandException("AI survivor not found");
-            population.suppress(bot.getName());remove(server, bot); return;
+            population.suppress(bot.getName());SurvivorRoster.get((WorldServer)bot.world).forget(key(bot.getName()));remove(server, bot); return;
         }
         if (args.length != 2 || !args[0].equals("spawn") || !args[1].matches("[A-Za-z0-9_]{1,13}")) throw new CommandException(getUsage(sender));
         if (bots.size() >= MAX) throw new CommandException("AI survivor limit reached");
@@ -522,17 +523,19 @@ public final class SurvivorService extends CommandBase {
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(SurvivorRoster.uuid(n),name),home);
         bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,0,0);
         SurvivorRoster.restore(bot,n);
+        if(relocated)bot.setPositionAndRotation(pos.getX()+.5,pos.getY(),pos.getZ()+.5,bot.rotationYaw,bot.rotationPitch);
         if(relocated&&!SurvivorPermissions.allowed(bot,pos,true)){bot.cancelPlanning();return false;}
         // Keep the original snapshot until activation actually succeeds.
-        activate(server,world,bot);
-        roster.forget(k);roster.markRecruited(k);return true;
+        activate(server,world,bot,!n.hasKey("player",10));
+        roster.markRecruited(k);roster.park(k,bot);return true;
     }
     private static void announceLifecycle(MinecraftServer server,SurvivorPlayer bot,boolean joined){
         var message=new net.minecraft.util.text.TextComponentTranslation(joined?"multiplayer.player.joined":"multiplayer.player.left",bot.getName());
         message.getStyle().setColor(net.minecraft.util.text.TextFormatting.YELLOW);
         for(EntityPlayerMP p:server.getPlayerList().getPlayers())p.sendMessage(message.createCopy());
     }
-    private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{
+    private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot)throws CommandException{activate(server,world,bot,true);}
+    private void activate(MinecraftServer server,WorldServer world,SurvivorPlayer bot,boolean allowChoice)throws CommandException{
         String name=bot.getName();
         // Validate before world insertion: vanilla can replace an existing entity on a UUID collision.
         if(!name.matches("[A-Za-z0-9_]{1,16}") || bot.getUniqueID()==null || bots.containsKey(key(name)) || server.getPlayerList().getPlayerByUsername(name)!=null || server.getPlayerList().getPlayerByUUID(bot.getUniqueID())!=null){
@@ -541,11 +544,12 @@ public final class SurvivorService extends CommandBase {
         for(WorldServer dimension:server.worlds)if(dimension!=null && dimension.getEntityFromUuid(bot.getUniqueID())!=null){
             bot.cancelPlanning();throw new CommandException("Agent UUID already exists in a loaded world");
         }
-        if(!SurvivorFaction.human(bot)){bot.cancelPlanning();throw new CommandException("Cotesia HUMAN selection failed; AI not activated");}
+        if(!SurvivorFaction.human(bot,allowChoice)){bot.cancelPlanning();throw new CommandException("Cotesia HUMAN selection failed; AI not activated");}
         broadcast(server, new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, bot));
         try {
             if (!world.spawnEntity(bot)) throw new CommandException("AI spawn rejected");
             bots.put(key(name), bot);
+            SurvivorRoster.get(world).park(key(name),bot);
             SurvivorTelemetry.event("join",bot,"");
             announceLifecycle(server,bot,true);
             updateAgentStatus(server);
@@ -776,8 +780,8 @@ public final class SurvivorService extends CommandBase {
         for (SurvivorPlayer bot : new ArrayList<>(bots.values())) {
             MinecraftServer server = bot.getServer();
             if (server == null) continue;
-            if (!bot.isEntityAlive() || com.x4yi.automata.compat.ManhuntCompat.isParasite(bot) || server.getPlayerList().getPlayerByUsername(bot.getName()) != null) { population.lost(bot.getName(),!bot.isEntityAlive());remove(server, bot); continue; }
-            try { bot.setStressed(stressed || (System.nanoTime()-start)>4_000_000L); bot.drive(); } catch (RuntimeException | LinkageError e) {
+            if (!bot.isEntityAlive() || com.x4yi.automata.compat.ManhuntCompat.isParasite(bot) || server.getPlayerList().getPlayerByUsername(bot.getName()) != null) { if(!bot.isEntityAlive()||com.x4yi.automata.compat.ManhuntCompat.isParasite(bot))SurvivorRoster.get((WorldServer)bot.world).forget(key(bot.getName()));else SurvivorRoster.get((WorldServer)bot.world).park(key(bot.getName()),bot);population.lost(bot.getName(),!bot.isEntityAlive());remove(server, bot); continue; }
+            try { bot.setStressed(stressed || (System.nanoTime()-start)>4_000_000L); bot.drive(); if(bot.isEntityAlive()&&Math.floorMod(ticks+Math.floorMod(bot.getUniqueID().hashCode(),1200),1200)==0)SurvivorRoster.get((WorldServer)bot.world).park(key(bot.getName()),bot); } catch (RuntimeException | LinkageError e) {
                 AutomataMod.LOGGER.error("Manhunt AI disabled after error: " + bot.getName(), e);
                 population.lost(bot.getName(),false);remove(server, bot);
             }
