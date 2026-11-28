@@ -9,12 +9,14 @@ import com.x4yi.automata.AutomataMod;
  * Never starts or changes the score of the global event. */
 final class SurvivorSeason {
     private final SurvivorPlayer bot;
+    private final SurvivorTechnology technology;
+    private int lureCursor;
     private int next;
     private String status="collecting";
     private static final ResourceLocation LURE=new ResourceLocation("srparasites:evolutionlure"),SPECIMEN=new ResourceLocation("overlast:final_specimen");
-    SurvivorSeason(SurvivorPlayer bot){this.bot=bot;}
+    SurvivorSeason(SurvivorPlayer bot){this.bot=bot;technology=new SurvivorTechnology(bot);}
     String status(){return status;}
-    boolean needsIron(){return (count(SPECIMEN,-1)>0||bot.arenaSpecimen())&&count(new ResourceLocation("minecraft:iron_block"),-1)<9&&count(new ResourceLocation("minecraft:iron_ingot"),-1)<15;}
+    boolean needsIron(){return (count(SPECIMEN,-1)>0||bot.arenaSpecimen())&&count(new ResourceLocation("minecraft:iron_block"),-1)<9&&count(new ResourceLocation("minecraft:iron_ingot"),-1)<81;}
     static boolean useful(ItemStack s){
         if(s.isEmpty()||s.getItem().getRegistryName()==null)return false;
         String id=s.getItem().getRegistryName().toString();
@@ -63,9 +65,7 @@ final class SurvivorSeason {
                 int moved=n-offer.getCount();
                 if(moved<=0)continue;
                 source.shrink(moved);from.inventory.markDirty();to.inventory.markDirty();
-                SurvivorTelemetry.event("chat",from,to.getName()+", на держи, это для финальной битвы.");
-                for(var human:from.getServer().getPlayerList().getPlayers())if(human.world==from.world&&human.getDistanceSq(from)<=32*32&&!com.x4yi.automata.compat.ManhuntCompat.isHostile(human))
-                    human.sendMessage(new net.minecraft.util.text.TextComponentString(from.getName()+": "+to.getName()+", на держи, это для финальной битвы."));
+                SurvivorService.INSTANCE.localSpeech(from,32,to.getName()+", на держи, это для финальной битвы.", "Собрал материалы для образца, передаю "+to.getName()+".");
                 return;
             }
         }
@@ -81,8 +81,8 @@ final class SurvivorSeason {
             int beacon=count(new ResourceLocation("minecraft:beacon"),-1);
             status="final specimen ready; arena blocks="+iron+"/9; beacon="+beacon+"/1";
             if(!SurvivorCrafting.nearbyBench(bot))return false;
-            if(iron<9&&count(new ResourceLocation("minecraft:iron_ingot"),-1)>=15&&recipe("minecraft:iron_block"))return true;
-            if(beacon<1&&count(new ResourceLocation("minecraft:nether_star"),-1)>0&&recipe("minecraft:beacon"))return true;
+            if(iron<9&&count(new ResourceLocation("minecraft:iron_ingot"),-1)>=9&&recipe("minecraft:iron_block"))return true;
+            if(beacon<1&&count(new ResourceLocation("minecraft:nether_star"),-1)>0&&(recipe("minecraft:beacon")||technology.produceOnce(new ResourceLocation("minecraft:beacon"),-1)))return true;
             return false;
         }
         int mask=0;
@@ -95,7 +95,12 @@ final class SurvivorSeason {
             if((mask&(1<<i))!=0)continue;
             if(recipe("srparasites:lureblock"+(i==0?"":Integer.toString(i+1))))return true;
         }
-        if(mask==63&&stars>=2&&egg>=1&&recipe("overlast:final_specimen")){status="final specimen ready";return true;}
+        if(mask==63&&stars>=2&&egg>=1&&(recipe("overlast:final_specimen")||technology.produceOnce(SPECIMEN,-1))){status="final specimen ready";return true;}
+        for(int j=0;j<6;j++){
+            int i=Math.floorMod(lureCursor++,6);
+            if((mask&(1<<i))==0){if(technology.produceOnce(LURE,i))return true;break;}
+        }
+        if(mask==63)status+="; seeking "+(stars<2?"nether stars":egg<1?"dragon egg":"specimen recipe");
         // Purification recipes consume real hearts/purifiers. Keep a small stock for later use.
         if(count(new ResourceLocation("overlast:blockpurifier"),-1)<4)
             if(recipe("overlast:blockpurifier")||recipe("overlast:blockpurifier2"))return true;
