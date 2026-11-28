@@ -152,7 +152,7 @@ final class SurvivorWork {
         }
         if(scanCursor<SCAN_SIZE)return true;
         failedScans++;
-        if(age<nextExpedition)return false;
+        if(age<nextExpedition)return true;
         nextExpedition=age+100;
         // Bounded, staged waypoints within the existing 48-block path planner.
         BlockPos here=bot.getPosition();
@@ -246,17 +246,18 @@ final class SurvivorWork {
         }
         if(bot.furnaceBusy())return true;
         if(!bot.hasFurnaceStation()){
-            if(has(furnace)){bot.furnaceStation();return true;}
+            if(has(furnace))return bot.furnaceStation();
             if(count(Item.getItemFromBlock(Blocks.COBBLESTONE))>=8){
                 if(ensureBench())craft(furnace,true);
                 return true;
             }
             return false;
         }
-        if(!has(Items.COAL))return mineOre(Blocks.COAL_ORE);
+        boolean fuel=false;
+        for(int i=0;i<36;i++)if(SurvivorFurnace.usableFuel(bot.inventory.getStackInSlot(i))){fuel=true;break;}
+        if(!fuel)return mineOre(Blocks.COAL_ORE);
         if(!has(ore))return mineOre(Blocks.IRON_ORE);
-        if(!bot.furnaceBusy())bot.smelt(ore.getRegistryName());
-        return true;
+        return bot.furnaceBusy()||bot.smelt(ore.getRegistryName());
     }
     private boolean mineOre(net.minecraft.block.Block ore){
         if(requestedOre!=ore){clear();requestedOre=ore;}
