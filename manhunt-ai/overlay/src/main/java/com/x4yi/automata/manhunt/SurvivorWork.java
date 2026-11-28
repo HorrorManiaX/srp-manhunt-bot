@@ -34,8 +34,8 @@ final class SurvivorWork {
     private int expeditionDeadline, expeditionIndex, failedScans, nextExpedition;
     private String searchStatus="idle";
     private final java.util.LinkedHashMap<BlockPos,Integer> failedTargets=new java.util.LinkedHashMap<>();
-    private static final int SCAN_SIZE=25*25*9;
-    private boolean inRange(BlockPos p){return p.distanceSq(home)<=128*128;}
+    private static final int SCAN_SIZE=SurvivorExplorationPolicy.SCAN_SIZE;
+    private boolean inRange(BlockPos p){return SurvivorExplorationPolicy.within(p.distanceSq(home));}
     String searchStatus(){return searchStatus;}
     private void reject(BlockPos p){if(p==null)return;failedTargets.put(p.toImmutable(),age+2400);while(failedTargets.size()>64)failedTargets.remove(failedTargets.keySet().iterator().next());}
     private boolean rejected(BlockPos p){return failedTargets.getOrDefault(p,0)>age;}
@@ -146,7 +146,8 @@ final class SurvivorWork {
         long stop=System.nanoTime()+500_000L;
         for(int i=0;i<96&&scanCursor<SCAN_SIZE&&System.nanoTime()<stop;i++){
             int k=scanCursor++;
-            BlockPos p=scanOrigin.add(k%25-12,k/625-4,(k/25)%25-12);
+            int[] offset=SurvivorExplorationPolicy.scanOffset(k);
+            BlockPos p=scanOrigin.add(offset[0],offset[1],offset[2]);
             if(selectResource(p))return true;
         }
         if(scanCursor<SCAN_SIZE)return true;
@@ -157,9 +158,8 @@ final class SurvivorWork {
         BlockPos here=bot.getPosition();
         for(int i=0;i<12;i++){
             int k=expeditionIndex++;
-            double angle=(k%16)*Math.PI/8;
-            int distance=12+(k/16%3)*8;
-            BlockPos column=here.add(Math.round(Math.cos(angle)*distance),0,Math.round(Math.sin(angle)*distance));
+            int[] offset=SurvivorExplorationPolicy.waypoint(k);
+            BlockPos column=here.add(offset[0],0,offset[1]);
             for(int dy:new int[]{0,1,-1,3,-3,5,-5}){
                 BlockPos p=column.up(dy);
                 if(rejected(p)||!standable(p)||!SurvivorPermissions.allowed(bot,p,true))continue;
