@@ -1,0 +1,73 @@
+name: Manhunt AI CI
+on:
+  push:
+    branches: [manhunt-ai]
+    paths: ['manhunt-ai/**', '.github/workflows/manhunt-ai.yml']
+  pull_request:
+    branches: [main]
+    paths: ['manhunt-ai/**', '.github/workflows/manhunt-ai.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: manhunt-ai-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: X4yii/Automata
+          ref: 5bf94f646ff6cc0fb07b20c1067f9c393d451225
+          path: automata-upstream
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Apply Manhunt overlay
+        run: python3 manhunt-ai/apply_overlay.py automata-upstream
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+      - name: Tactical decision regression tests
+        run: |
+          mkdir -p /tmp/manhunt-ai-test
+          javac -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorBrain.java manhunt-ai/tests/BrainSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorProgression.java manhunt-ai/tests/ProgressionSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorBlueprint.java manhunt-ai/tests/BlueprintSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorSupplyPolicy.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorPersonality.java manhunt-ai/tests/SupplySelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorPopulationPolicy.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorDefense.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorHelpPolicy.java manhunt-ai/tests/PopulationSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorCombatPolicy.java manhunt-ai/tests/CombatSelfTest.java manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorStrongholdPlan.java manhunt-ai/tests/StrongholdSelfTest.java
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.BrainSelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.ProgressionSelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.BlueprintSelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.SupplySelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.PopulationSelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.CombatSelfTest
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.StrongholdSelfTest
+          javac -encoding UTF-8 -cp /tmp/manhunt-ai-test -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorChatPolicy.java manhunt-ai/tests/ChatSelfTest.java
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.ChatSelfTest
+          javac -encoding UTF-8 -cp /tmp/manhunt-ai-test -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorSpeechPolicy.java manhunt-ai/tests/SpeechSelfTest.java
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.SpeechSelfTest
+          javac -encoding UTF-8 -cp /tmp/manhunt-ai-test -d /tmp/manhunt-ai-test manhunt-ai/overlay/src/main/java/com/x4yi/automata/manhunt/SurvivorExplorationPolicy.java manhunt-ai/tests/ExplorationSelfTest.java
+          java -cp /tmp/manhunt-ai-test com.x4yi.automata.manhunt.ExplorationSelfTest
+      - name: Build and test
+        working-directory: automata-upstream
+        run: bash gradlew build --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Manhunt-AI-jars
+          path: automata-upstream/build/libs/*.jar
+          if-no-files-found: error
+      - name: Package complete source
+        if: always()
+        run: |
+          tar --exclude=.git --exclude=.gradle --exclude=build -czf manhunt-ai-source.tar.gz -C automata-upstream .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Manhunt-AI-source
+          path: manhunt-ai-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Manhunt-AI-test-reports
+          path: automata-upstream/build/reports/
+          if-no-files-found: ignore
