@@ -30,9 +30,18 @@ final class SurvivorWork {
     private IBlockState miningState;
     private float progress;
     private int stage=-1;
+    private BlockPos scanOrigin, expedition;
+    private int expeditionDeadline, expeditionIndex, failedScans, nextExpedition;
+    private String searchStatus="idle";
+    private final java.util.LinkedHashMap<BlockPos,Integer> failedTargets=new java.util.LinkedHashMap<>();
+    private static final int SCAN_SIZE=25*25*9;
+    private boolean inRange(BlockPos p){return p.distanceSq(home)<=128*128;}
+    String searchStatus(){return searchStatus;}
+    private void reject(BlockPos p){if(p==null)return;failedTargets.put(p.toImmutable(),age+2400);while(failedTargets.size()>64)failedTargets.remove(failedTargets.keySet().iterator().next());}
+    private boolean rejected(BlockPos p){return failedTargets.getOrDefault(p,0)>age;}
     private SurvivorProgression.Task task=SurvivorProgression.Task.IDLE;
     SurvivorWork(SurvivorPlayer bot,BlockPos home) {this.bot=bot;this.home=home;role=SurvivorProgression.role(bot.getUniqueID().hashCode());technology=new SurvivorTechnology(bot);}
-    String status(){return role.name()+"/"+(enabled?task.name():"DISABLED")+(technology.active()?" goal="+technology.status():"");}
+    String status(){return role.name()+"/"+(enabled?task.name():"DISABLED")+"/industry="+industry+(technology.active()?" goal="+technology.status():"");}
     boolean goal(net.minecraft.util.ResourceLocation id){return technology.setGoal(id);}
     void clearGoal(){technology.clear();}
     void industry(boolean value){industry=value;requestedOre=null;if(!value)clear();}
@@ -70,7 +79,7 @@ final class SurvivorWork {
             has(Items.WOODEN_SWORD,Items.STONE_SWORD,Items.IRON_SWORD,Items.DIAMOND_SWORD),blocks,shelterQueued);
     }
     void interrupt(){if(stage>=0)resetMining();}
-    void clear(){resetMining();release();target=null;destination=null;scanCursor=0;task=SurvivorProgression.Task.IDLE;}
+    void clear(){resetMining();release();target=null;destination=null;expedition=null;scanOrigin=null;scanCursor=0;task=SurvivorProgression.Task.IDLE;}
     private boolean reserve(BlockPos p){
         var map=reservations.computeIfAbsent(world(),w->new java.util.HashMap<>());
         long now=world().getTotalWorldTime();
@@ -89,9 +98,7 @@ final class SurvivorWork {
         progress=0;stage=-1;miningState=null;
     }
     private boolean standable(BlockPos p){
-        return p.distanceSq(home)<=144&&world().isBlockLoaded(p)&&world().isBlockLoaded(p.up())&&world().isBlockLoaded(p.down())
-            && CellClassifier.isPassable(world(),p)&&CellClassifier.isPassable(world(),p.up())&&CellClassifier.isSolidSupport(world(),p.down())
-            && !world().getBlockState(p).getMaterial().isLiquid();
+        return inRange(p)&&SurvivorTerrain.stand(world(),p);
     }
     private BlockPos adjacent(BlockPos p){
         BlockPos best=null;double d=Double.MAX_VALUE;
@@ -106,32 +113,58 @@ final class SurvivorWork {
         return hit!=null&&p.equals(hit.getBlockPos());
     }
     private boolean matches(BlockPos p,SurvivorProgression.Task kind){
-        if(!world().isBlockLoaded(p)||p.distanceSq(home)>144)return false;
+        if(!world().isBlockLoaded(p)||!inRange(p))return false;
         var block=world().getBlockState(p).getBlock();
         if(requestedOre!=null)return block==requestedOre;
-        return kind==SurvivorProgression.Task.WOOD?(block==Blocks.LOG||block==Blocks.LOG2):
+        return kind==SurvivorProgression.Task.WOOD?(block==Blocks.LOG||block==Blocks.LOG2||block==Blocks.PLANKS):
             kind==SurvivorProgression.Task.STONE?(block==Blocks.STONE||block==Blocks.COBBLESTONE):false;
     }
     private boolean selectResource(BlockPos p){
-        if(!matches(p,task)||!visible(p)||!SurvivorPermissions.allowed(bot,p,false))return false;
+        if(rejected(p)||!matches(p,task)||!visible(p)||!SurvivorPermissions.allowed(bot,p,false))return false;
         BlockPos stand=adjacent(p);
         if(stand==null||!reserve(p))return false;
-        target=p.toImmutable();destination=stand;deadline=age+240;
+        target=p.toImmutable();destination=stand;deadline=age+600;expedition=null;failedScans=0;searchStatus="mining target "+task;
         if(requestedOre==null)memory().note(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",target,world().getTotalWorldTime());
         return true;
     }
-    private void findResource(){
-        if(target!=null)return;
+    private boolean findResource(){
+        if(target!=null)return true;
+        if(expedition!=null){
+            if(bot.getDistanceSqToCenter(expedition)<9){expedition=null;destination=null;scanOrigin=null;scanCursor=0;memory().count(bot.getUniqueID(),"explored");}
+            else if(age>=expeditionDeadline){reject(expedition);expedition=null;destination=null;scanOrigin=null;scanCursor=0;}
+            else{destination=expedition;searchStatus="exploring "+task;return true;}
+        }
+        if(scanOrigin==null){scanOrigin=bot.getPosition();scanCursor=0;}
         if(scanCursor==0&&requestedOre==null){
             BlockPos remembered=memory().recall(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",world().getTotalWorldTime(),12000);
-            if(remembered!=null&&selectResource(remembered))return;
+            if(remembered!=null&&remembered.distanceSq(bot.getPosition())<40*40&&selectResource(remembered))return true;
         }
-        // 25x25x5 home volume, sampled in small slices; no chunk loads.
-        for(int i=0;i<48;i++){
-            int k=scanCursor++%3125;
-            BlockPos p=home.add(k%25-12,k/625-2,(k/25)%25-12);
-            if(selectResource(p))return;
+        searchStatus="survey "+task+" "+scanCursor+"/"+SCAN_SIZE;
+        long stop=System.nanoTime()+500_000L;
+        for(int i=0;i<96&&scanCursor<SCAN_SIZE&&System.nanoTime()<stop;i++){
+            int k=scanCursor++;
+            BlockPos p=scanOrigin.add(k%25-12,k/625-4,(k/25)%25-12);
+            if(selectResource(p))return true;
         }
+        if(scanCursor<SCAN_SIZE)return true;
+        failedScans++;
+        if(age<nextExpedition)return false;
+        nextExpedition=age+100;
+        // Bounded, staged waypoints within the existing 48-block path planner.
+        BlockPos here=bot.getPosition();
+        for(int i=0;i<12;i++){
+            int k=expeditionIndex++;
+            double angle=(k%16)*Math.PI/8;
+            int distance=12+(k/16%3)*8;
+            BlockPos column=here.add(Math.round(Math.cos(angle)*distance),0,Math.round(Math.sin(angle)*distance));
+            for(int dy:new int[]{0,1,-1,3,-3,5,-5}){
+                BlockPos p=column.up(dy);
+                if(rejected(p)||!standable(p)||!SurvivorPermissions.allowed(bot,p,true))continue;
+                expedition=p;destination=p;expeditionDeadline=age+600;searchStatus="expedition "+task;return true;
+            }
+        }
+        // No reachable loaded waypoint: retry from the current location, not one fixed home volume.
+        scanOrigin=null;scanCursor=0;searchStatus="blocked "+task;return false;
     }
     private boolean craft(Item output,boolean table){
         if(SurvivorCrafting.craftOutput(bot,output,table)){
@@ -141,12 +174,12 @@ final class SurvivorWork {
     }
     private boolean ensureBench(){
         if(SurvivorCrafting.nearbyBench(bot)){destination=null;return true;}
-        if(bench!=null && world().isBlockLoaded(bench)&&world().getBlockState(bench).getBlock()==Blocks.CRAFTING_TABLE){destination=adjacent(bench);return false;}
+        if(bench!=null && bench.distanceSq(bot.getPosition())<40*40&&world().isBlockLoaded(bench)&&world().getBlockState(bench).getBlock()==Blocks.CRAFTING_TABLE){destination=adjacent(bench);return false;}
         BlockPos old=memory().recall(bot.getUniqueID(),"bench",world().getTotalWorldTime(),Long.MAX_VALUE);
-        if(old!=null&&old.distanceSq(home)<=144&&world().isBlockLoaded(old)&&world().getBlockState(old).getBlock()==Blocks.CRAFTING_TABLE){bench=old;destination=adjacent(bench);return false;}
+        if(old!=null&&old.distanceSq(bot.getPosition())<40*40&&world().isBlockLoaded(old)&&world().getBlockState(old).getBlock()==Blocks.CRAFTING_TABLE){bench=old;destination=adjacent(bench);return false;}
         if(!has(Item.getItemFromBlock(Blocks.CRAFTING_TABLE))){craft(Item.getItemFromBlock(Blocks.CRAFTING_TABLE),false);return false;}
         for(EnumFacing f:EnumFacing.HORIZONTALS){
-            BlockPos p=home.offset(f,2);
+            BlockPos p=bot.getPosition().offset(f,2);
             if(world().isBlockLoaded(p)&&world().isAirBlock(p)&&world().isBlockLoaded(p.down())&&CellClassifier.isSolidSupport(world(),p.down())&&SurvivorPermissions.allowed(bot,p,true)){
                 if(bot.requestBuild(p,new net.minecraft.util.ResourceLocation("minecraft:crafting_table"))){bench=p;memory().note(bot.getUniqueID(),"bench",p,world().getTotalWorldTime());}
                 return false;
@@ -157,7 +190,7 @@ final class SurvivorWork {
     void plan(boolean stressed){
         age++;
         if(!enabled||stressed)return;
-        if(target!=null && (age>=deadline||!matches(target,task))){clear();}
+        if(target!=null && (age>=deadline||!matches(target,task))){if(age>=deadline)reject(target);clear();}
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
         if(bot.seasonWork(age))return;
@@ -172,10 +205,7 @@ final class SurvivorWork {
         if(technology.active()&&age>=nextTech){nextTech=age+80;if(technology.step(SurvivorCrafting.nearbyBench(bot))){memory().count(bot.getUniqueID(),"crafted");return;}}
         if(defenseDeficit>0 && has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)&&count(Item.getItemFromBlock(Blocks.COBBLESTONE))<Math.min(32,defenseDeficit+4)){
             if(task!=SurvivorProgression.Task.STONE||requestedOre!=null){clear();requestedOre=null;task=SurvivorProgression.Task.STONE;}
-            findResource();
-            if(target!=null)return;
-            // After one local scan, permit other survival tasks even if no stone is visible.
-            if(scanCursor<3125)return;
+            if(findResource())return;
             defenseDeficit=0;scanCursor=0;
         }
         if(industry&&has(Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE)){
@@ -219,18 +249,18 @@ final class SurvivorWork {
             }
             return false;
         }
-        if(!has(Items.COAL)){mineOre(Blocks.COAL_ORE);return target!=null||scanCursor<3125;}
-        if(!has(ore)){mineOre(Blocks.IRON_ORE);return target!=null||scanCursor<3125;}
+        if(!has(Items.COAL))return mineOre(Blocks.COAL_ORE);
+        if(!has(ore))return mineOre(Blocks.IRON_ORE);
         if(!bot.furnaceBusy())bot.smelt(ore.getRegistryName());
         return true;
     }
-    private void mineOre(net.minecraft.block.Block ore){
+    private boolean mineOre(net.minecraft.block.Block ore){
         if(requestedOre!=ore){clear();requestedOre=ore;}
-        task=SurvivorProgression.Task.STONE;findResource();
+        task=SurvivorProgression.Task.STONE;return findResource();
     }
     boolean act(){
         if(!enabled||target==null)return false;
-        if(!matches(target,task)||!SurvivorPermissions.allowed(bot,target,false)||!reserve(target)){clear();return false;}
+        if(!matches(target,task)||!SurvivorPermissions.allowed(bot,target,false)||!reserve(target)){reject(target);clear();return false;}
         if(bot.getDistanceSqToCenter(target)>16||!visible(target)){resetMining();return false;}
         if(!bot.onGround&&!bot.isInWater())return false;
         IBlockState state=world().getBlockState(target);
@@ -244,15 +274,15 @@ final class SurvivorWork {
         }
         if(best>=0)bot.equipInventorySlot(best);
         else if(task==SurvivorProgression.Task.STONE){clear();return false;}
-        if(task==SurvivorProgression.Task.STONE&&!state.getBlock().canHarvestBlock(world(),target,bot)){clear();return false;}
+        if(task==SurvivorProgression.Task.STONE&&!state.getBlock().canHarvestBlock(world(),target,bot)){reject(target);clear();return false;}
         bot.faceBlock(target);bot.moveForward=0;bot.moveStrafing=0;
         if(age%5==0)bot.swingArm(EnumHand.MAIN_HAND);
         float delta=state.getPlayerRelativeBlockHardness(bot,world(),target);
-        if(delta<=0||!Float.isFinite(delta)){clear();return false;}
+        if(delta<=0||!Float.isFinite(delta)){reject(target);clear();return false;}
         progress=Math.min(1,progress+delta);
         if(progress>=1){
             BlockPos p=target;resetMining();
-            if(bot.interactionManager.tryHarvestBlock(p))memory().count(bot.getUniqueID(),"mined");
+            if(bot.interactionManager.tryHarvestBlock(p))memory().count(bot.getUniqueID(),"mined");else reject(p);
             clear();nextPlan=age+10;return true;
         }
         int nextStage=Math.min(9,(int)(progress*10));
