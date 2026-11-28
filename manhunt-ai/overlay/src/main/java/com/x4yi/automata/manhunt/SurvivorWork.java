@@ -33,6 +33,35 @@ final class SurvivorWork {
     private BlockPos scanOrigin, expedition;
     private int expeditionDeadline, expeditionIndex, failedScans, nextExpedition;
     private String searchStatus="idle";
+    private BlockPos failedRouteGoal;
+    private int failedRouteCount;
+    void routeFailed(BlockPos p){
+        if(p==null||destination==null||!p.equals(destination))return;
+        if(!p.equals(failedRouteGoal)){failedRouteGoal=p;failedRouteCount=0;}
+        if(++failedRouteCount<3)return;
+        reject(p);reject(target);reject(expedition);reject(salvage);clear();failedRouteGoal=null;failedRouteCount=0;searchStatus="route rejected";
+    }
+    private BlockPos salvage;
+    private boolean naturalChest(BlockPos p){
+        if(!world().isBlockLoaded(p)||rejected(p)||!(world().getTileEntity(p) instanceof net.minecraft.tileentity.TileEntityChest c)||c.isLocked())return false;
+        return c.writeToNBT(new net.minecraft.nbt.NBTTagCompound()).hasKey("LootTable",8)&&SurvivorPermissions.interact(bot,p);
+    }
+    private boolean salvageChest(){
+        if(salvage==null)return false;
+        if(age>=deadline||!naturalChest(salvage)){reject(salvage);clear();return false;}
+        if(bot.getDistanceSqToCenter(salvage)>16||!visible(salvage))return false;
+        var c=(net.minecraft.tileentity.TileEntityChest)world().getTileEntity(salvage);
+        if(c==null||!c.isUsableByPlayer(bot)){reject(salvage);clear();return false;}
+        c.fillWithLoot(bot);
+        int movedTotal=0;
+        for(int i=0;i<c.getSizeInventory();i++){
+            ItemStack source=c.getStackInSlot(i);if(source.isEmpty())continue;
+            ItemStack offer=source.copy();int before=offer.getCount();bot.inventory.addItemStackToInventory(offer);int moved=before-offer.getCount();
+            if(moved>0){c.decrStackSize(i,moved);movedTotal+=moved;}
+        }
+        if(movedTotal>0){c.markDirty();bot.inventory.markDirty();memory().count(bot.getUniqueID(),"loot");}
+        reject(salvage);clear();return true;
+    }
     private final java.util.LinkedHashMap<BlockPos,Integer> failedTargets=new java.util.LinkedHashMap<>();
     private static final int SCAN_SIZE=SurvivorExplorationPolicy.SCAN_SIZE;
     private boolean inRange(BlockPos p){return SurvivorExplorationPolicy.within(p.distanceSq(home));}
@@ -79,7 +108,7 @@ final class SurvivorWork {
             has(Items.WOODEN_SWORD,Items.STONE_SWORD,Items.IRON_SWORD,Items.DIAMOND_SWORD),blocks,shelterQueued);
     }
     void interrupt(){if(stage>=0)resetMining();}
-    void clear(){resetMining();release();target=null;destination=null;expedition=null;scanOrigin=null;scanCursor=0;task=SurvivorProgression.Task.IDLE;}
+    void clear(){resetMining();release();target=null;destination=null;expedition=null;salvage=null;scanOrigin=null;scanCursor=0;task=SurvivorProgression.Task.IDLE;}
     private boolean reserve(BlockPos p){
         var map=reservations.computeIfAbsent(world(),w->new java.util.HashMap<>());
         long now=world().getTotalWorldTime();
@@ -120,11 +149,12 @@ final class SurvivorWork {
             kind==SurvivorProgression.Task.STONE?(block==Blocks.STONE||block==Blocks.COBBLESTONE):false;
     }
     private boolean selectResource(BlockPos p){
-        if(rejected(p)||!matches(p,task)||!visible(p)||!SurvivorPermissions.allowed(bot,p,false))return false;
+        if(rejected(p)||!matches(p,task)||!SurvivorPermissions.allowed(bot,p,false))return false;
+        if(!visible(p)&&p.distanceSq(bot.getPosition())>12*12)return false;
         // Salvage city planks, not the immediate camp structure or a player claim.
-        if(world().getBlockState(p).getBlock()==Blocks.PLANKS&&p.distanceSq(home)<64)return false;
+        if(world().getBlockState(p).getBlock()==Blocks.PLANKS&&p.distanceSq(home)<4)return false;
         BlockPos stand=adjacent(p);
-        if(stand==null||!reserve(p))return false;
+        if(stand==null||rejected(stand)||!reserve(p))return false;
         target=p.toImmutable();destination=stand;deadline=age+600;expedition=null;failedScans=0;searchStatus="mining target "+task;
         if(requestedOre==null)memory().note(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",target,world().getTotalWorldTime());
         return true;
@@ -134,7 +164,7 @@ final class SurvivorWork {
         if(expedition!=null){
             if(bot.getDistanceSqToCenter(expedition)<9){expedition=null;destination=null;scanOrigin=null;scanCursor=0;memory().count(bot.getUniqueID(),"explored");}
             else if(age>=expeditionDeadline){reject(expedition);expedition=null;destination=null;scanOrigin=null;scanCursor=0;}
-            else{destination=expedition;searchStatus="exploring "+task;return true;}
+            else{destination=expedition;searchStatus="exploring "+task+" at "+expedition;return true;}
         }
         if(scanOrigin==null){scanOrigin=bot.getPosition();scanCursor=0;}
         if(standable(scanOrigin))destination=scanOrigin;
@@ -149,6 +179,9 @@ final class SurvivorWork {
             int[] offset=SurvivorExplorationPolicy.scanOffset(k);
             BlockPos p=scanOrigin.add(offset[0],offset[1],offset[2]);
             if(selectResource(p))return true;
+            if(world().isBlockLoaded(p)&&world().getBlockState(p).getBlock() instanceof net.minecraft.block.BlockChest&&visible(p)&&naturalChest(p)){
+                BlockPos approach=adjacent(p);if(approach!=null){salvage=p.toImmutable();destination=approach;deadline=age+400;searchStatus="city loot";return true;}
+            }
         }
         if(scanCursor<SCAN_SIZE)return true;
         failedScans++;
@@ -162,7 +195,7 @@ final class SurvivorWork {
             BlockPos column=here.add(offset[0],0,offset[1]);
             for(int dy:new int[]{0,1,-1,3,-3,5,-5}){
                 BlockPos p=column.up(dy);
-                if(rejected(p)||!standable(p)||!SurvivorPermissions.allowed(bot,p,true))continue;
+                if(rejected(p)||!standable(p)||!SurvivorPermissions.allowed(bot,p,true)||SurvivorTerrain.safeExits(world(),p)==0)continue;
                 expedition=p;destination=p;expeditionDeadline=age+600;searchStatus="expedition "+task;return true;
             }
         }
@@ -193,6 +226,7 @@ final class SurvivorWork {
     void plan(boolean stressed){
         age++;
         if(!enabled||stressed)return;
+        if(salvage!=null){if(age>=deadline||!naturalChest(salvage)){reject(salvage);clear();}else return;}
         if(target!=null && (age>=deadline||!matches(target,task))){if(age>=deadline)reject(target);clear();}
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
@@ -264,7 +298,9 @@ final class SurvivorWork {
         task=SurvivorProgression.Task.STONE;return findResource();
     }
     boolean act(){
-        if(!enabled||target==null)return false;
+        if(!enabled)return false;
+        if(salvage!=null)return salvageChest();
+        if(target==null)return false;
         if(!matches(target,task)||!SurvivorPermissions.allowed(bot,target,false)||!reserve(target)){reject(target);clear();return false;}
         if(bot.getDistanceSqToCenter(target)>16||!visible(target)){resetMining();return false;}
         if(!bot.onGround&&!bot.isInWater())return false;
