@@ -13,12 +13,13 @@ final class SurvivorTelemetry {
         data.addProperty("player",player.getName());
         data.addProperty("text",body);
         data.addProperty("ai",true);
-        AutomataMod.LOGGER.info("MANHUNT_AI_EVENT "+data.toString());
+        if("death".equals(type))AutomataMod.LOGGER.debug("MANHUNT_AI_EVENT "+data.toString());
+        else AutomataMod.LOGGER.info("MANHUNT_AI_EVENT "+data.toString());
         if(!player.getName().matches("[A-Za-z0-9_]{1,16}"))return;
         String line=switch(type){
             case "join", "leave" -> ""; // Lifecycle notifications are not player chat.
             case "chat" -> body;
-            case "death" -> "Погиб: "+body;
+            case "death" -> ""; // Vanilla emits the canonical death message.
             case "kill" -> "Уничтожил противника: "+body;
             default -> "";
         };
