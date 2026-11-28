@@ -484,7 +484,7 @@ public final class SurvivorService extends CommandBase {
         SurvivorPlayer bot=new SurvivorPlayer(server,world,new GameProfile(uuid,name),pos);
         if(!SurvivorPermissions.allowed(bot,pos,true)){bot.cancelPlanning();return false;}
         SurvivorRoster roster=SurvivorRoster.get(world);
-        if(roster.recruited(k))bot.inventory.clear();
+        if(roster.recruited(k)){bot.inventory.clear();bot.inventory.setInventorySlotContents(0,new ItemStack(net.minecraft.init.Items.WOODEN_SWORD));bot.inventory.setInventorySlotContents(1,new ItemStack(net.minecraft.init.Items.BREAD,3));}
         else if(siegeKit)bot.equipSiegeStarter();
         bot.autonomous(true);bot.industry(true);
         activate(server,world,bot);roster.markRecruited(k);return true;
