@@ -38,8 +38,12 @@ public final class SurvivorMemory extends WorldSavedData {
         return elapsed>=0 && elapsed<=ttl ? BlockPos.fromLong(e.getLong("pos")):null;
     }
     void count(UUID id,String kind) {
-        if(!kind.equals("mined")&&!kind.equals("crafted")&&!kind.equals("encounters"))return;
+        if(!java.util.Set.of("mined","crafted","encounters","explored","placed","kills","deaths","loot","active_seconds").contains(kind))return;
         NBTTagCompound a=agent(id,true);a.setInteger(kind,Math.min(1000000,a.getInteger(kind)+1));markDirty();
+    }
+    String progress(UUID id){
+        NBTTagCompound a=agent(id,false);
+        return "mined="+a.getInteger("mined")+" crafted="+a.getInteger("crafted")+" explored="+a.getInteger("explored")+" placed="+a.getInteger("placed")+" kills="+a.getInteger("kills")+" deaths="+a.getInteger("deaths")+" loot_pickups="+a.getInteger("loot")+" tracked_minutes="+(a.getInteger("active_seconds")/60);
     }
     // Faction-scoped social memory. No raw chat or coordinates are persisted.
     void rememberConversation(UUID bot,UUID other,SurvivorChatPolicy.Side side,SurvivorChatPolicy.Topic topic){
