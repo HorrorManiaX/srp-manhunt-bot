@@ -16,8 +16,7 @@ final class SurvivorTelemetry {
         AutomataMod.LOGGER.info("MANHUNT_AI_EVENT "+data.toString());
         if(!player.getName().matches("[A-Za-z0-9_]{1,16}"))return;
         String line=switch(type){
-            case "join" -> "Присоединился к миру.";
-            case "leave" -> "Покинул мир.";
+            case "join", "leave" -> ""; // Lifecycle notifications are not player chat.
             case "chat" -> body;
             case "death" -> "Погиб: "+body;
             case "kill" -> "Уничтожил противника: "+body;
