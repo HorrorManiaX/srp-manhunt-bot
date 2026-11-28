@@ -698,7 +698,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?findBuildApproach():action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():jobGoal!=null?jobGoal:patrolGoal();
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
-                submittedGoal=goal;submittedAt=age;navigation="planning";
+                cancelled=new AtomicBoolean();submittedGoal=goal;submittedAt=age;navigation="planning";
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
                         new PathfindingSettings(false,getFoodStats().getFoodLevel()>8,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L,true),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
             }
