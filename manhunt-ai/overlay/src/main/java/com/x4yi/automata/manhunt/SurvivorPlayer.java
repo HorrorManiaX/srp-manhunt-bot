@@ -41,7 +41,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private int reloadUntil, nextReload;
     private AtomicBoolean cancelled = new AtomicBoolean();
     private CompletableFuture<PathResult> pending;
-    private int emptyRoutes,routeResets;
+    private int emptyRoutes,routeResets,submittedAt,routeTimeouts,stationarySince;
+    private BlockPos watchGoal;
+    private double watchX,watchY,watchZ;
     private BlockPos submittedGoal;
     private String navigation="idle";
     private PathResult path = PathResult.EMPTY;
@@ -240,7 +242,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             items.append(i).append(":").append(s.getItem().getRegistryName()).append("@").append(s.getMetadata()).append(" x").append(s.getCount());
         }
         return getName()+" | HP="+getHealth()+"/"+getMaxHealth()+" hunger="+getFoodStats().getFoodLevel()+" | position="+getPosition()+" home="+home+" dimension="+world.provider.getDimension()+"\n"
-            +activity()+" | auto="+autonomousEnabled()+" | industry="+industryEnabled()+" | search="+work.searchStatus()+" | navigation="+navigation+" empty="+emptyRoutes+" resets="+routeResets+" goal="+plannedGoal+" | "+infrastructureStatus()+"\n"
+            +activity()+" | auto="+autonomousEnabled()+" | industry="+industryEnabled()+" | search="+work.searchStatus()+" | navigation="+navigation+" empty="+emptyRoutes+" resets="+routeResets+" timeouts="+routeTimeouts+" pendingTicks="+(pending==null?0:age-submittedAt)+" step="+step+"/"+path.length()+" goal="+plannedGoal+" | "+infrastructureStatus()+"\n"
             +"Historical tracked counters: "+SurvivorMemory.get((WorldServer)world).progress(getUniqueID())+"\nInventory: "+(items.length()==0?"empty":items.toString());
     }
     void recordVictory(){
@@ -658,7 +660,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         BlockPos jobGoal=assistance!=null?assistance:infrastructure!=null?infrastructure:furnace.active()&&furnace.destination()!=null?furnace.destination():foodRecovery.destination()!=null?foodRecovery.destination():work.destination();
         if(assistance!=null&&action==SurvivorBrain.Action.BUILD){action=SurvivorBrain.Action.PATROL;activity="assist";}
         if(assistance!=null&&action==SurvivorBrain.Action.PATROL)activity="assist";
-        if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null)nextPlan=0;
+        if(action==SurvivorBrain.Action.PATROL && jobGoal!=null && (plannedGoal==null||jobGoal.distanceSq(plannedGoal)>4) && pending==null){invalidateRoute();nextPlan=0;}
         if((action==SurvivorBrain.Action.PATROL||action==SurvivorBrain.Action.RETREAT&&target!=null&&getDistanceSq(target)>144)&&gunSlot<0&&age>=nextReload&&!stressed&&!isHandActive()){
             nextReload=age+40;
             int reload=SurvivorWeapons.reload(this,age);
@@ -671,18 +673,32 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         if(moveForward!=0 && Math.abs(posX-lastX)+Math.abs(posZ-lastZ)<.025) stuckTicks++; else stuckTicks=0;
         lastX=posX;lastZ=posZ;
         if(stuckTicks>16) {if(step<path.length())markRouteFailure(path.getStep(step));routeResets++;navigation="stuck";if(action==SurvivorBrain.Action.PATROL)work.routeFailed(plannedGoal);invalidateRoute();stuckTicks=0;}
+        if(action==SurvivorBrain.Action.PATROL&&jobGoal!=null&&getDistanceSqToCenter(jobGoal)>4){
+            double moved=(posX-watchX)*(posX-watchX)+(posY-watchY)*(posY-watchY)+(posZ-watchZ)*(posZ-watchZ);
+            if(watchGoal==null||!watchGoal.equals(jobGoal)||moved>=1){
+                watchGoal=jobGoal;watchX=posX;watchY=posY;watchZ=posZ;stationarySince=age;
+            }else if(age-stationarySince>=100){
+                routeResets++;work.routeFailed(jobGoal);invalidateRoute();navigation="stationary watchdog";
+                stationarySince=age;nextPlan=age+5;
+            }
+        }else{watchGoal=null;stationarySince=age;}
+        if(pending!=null&&!pending.isDone()&&age-submittedAt>=80){
+            BlockPos failed=submittedGoal;routeTimeouts++;invalidateRoute();navigation="path timeout";
+            if(action==SurvivorBrain.Action.PATROL)work.routeFailed(failed);
+            nextPlan=age+10;
+        }
         if (pending != null && pending.isDone()) {
             try { path = pending.getNow(PathResult.EMPTY); } catch (RuntimeException e) { path = PathResult.EMPTY; }
             pending = null; step = 0;
             if(path.length()==0&&submittedGoal!=null&&getDistanceSqToCenter(submittedGoal)>9){emptyRoutes++;navigation="no route";if(action==SurvivorBrain.Action.PATROL)work.routeFailed(submittedGoal);nextPlan=age+10;}
             else navigation="path steps="+path.length();
         }
-        if (age >= nextPlan && pending == null && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
+        if (age >= nextPlan && pending == null && (step>=path.length()||retreat||jobGoal!=null&&!jobGoal.equals(plannedGoal)) && action!=SurvivorBrain.Action.RANGED && action!=SurvivorBrain.Action.MELEE && action!=SurvivorBrain.Action.EAT) {
             nextPlan=age+(stressed?60:retreat?15:30)+rand.nextInt(10);
             BlockPos goal=retreat?escapeGoal:target!=null?(visible?target.getPosition():lastThreat):action==SurvivorBrain.Action.BUILD?findBuildApproach():action==SurvivorBrain.Action.SCAVENGE?loot.getPosition():jobGoal!=null?jobGoal:patrolGoal();
             if(goal!=null) plannedGoal=goal;
             if (goal != null && world.isBlockLoaded(goal) && getDistanceSqToCenter(goal) < 48 * 48) {
-                submittedGoal=goal;navigation="planning";
+                submittedGoal=goal;submittedAt=age;navigation="planning";
                 pending = PathfindingExecutor.submitServerPath(world, getPosition(), goal, 0,
                         new PathfindingSettings(false,getFoodStats().getFoodLevel()>8,false,stressed?2048:4096,2,0,stressed?10_000_000L:18_000_000L,true),cancelled,new it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap(routeFailures));
             }
