@@ -359,6 +359,9 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     boolean requestFieldBench(BlockPos pos){
         return requestBuild(pos,new net.minecraft.util.ResourceLocation("minecraft:crafting_table"),true);
     }
+    boolean requestFieldFurnace(BlockPos pos){
+        return requestBuild(pos,new net.minecraft.util.ResourceLocation("minecraft:furnace"),true);
+    }
     private boolean requestBuild(BlockPos pos, net.minecraft.util.ResourceLocation item,boolean fieldBench) {
         if (!world.isBlockLoaded(pos) || (fieldBench?(pos.distanceSq(home)>128*128||pos.distanceSq(getPosition())>36):pos.distanceSq(home)>12*12) || !world.isAirBlock(pos) || !SurvivorPermissions.allowed(this,pos,true)) return false;
         if(buildGoal!=null)return buildGoal.equals(pos)&&java.util.Objects.equals(buildItem,item);
@@ -377,7 +380,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)for(int dy=-2;dy<=0;dy++){
             if(x==0&&z==0)continue;
             BlockPos p=buildGoal.add(x,dy,z);
-            if(!standable(p)||p.distanceSq(home)>(buildItem!=null&&buildItem.toString().equals("minecraft:crafting_table")?128*128:144))continue;
+            if(!standable(p)||p.distanceSq(home)>(buildItem!=null&&(buildItem.toString().equals("minecraft:crafting_table")||buildItem.toString().equals("minecraft:furnace"))?128*128:144))continue;
             double d=getDistanceSqToCenter(p)+.25*p.distanceSq(buildGoal);
             if(d<best){best=d;buildApproach=p;}
         }
