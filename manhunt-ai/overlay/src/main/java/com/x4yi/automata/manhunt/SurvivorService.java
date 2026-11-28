@@ -232,7 +232,10 @@ public final class SurvivorService extends CommandBase {
     }
     @SubscribeEvent(receiveCanceled=false)
     public void onDeath(net.minecraftforge.event.entity.living.LivingDeathEvent event){
-        if(!event.getEntityLiving().world.isRemote&&event.getEntityLiving() instanceof SurvivorPlayer bot&&bots.get(key(bot.getName()))==bot)SurvivorTelemetry.event("death",bot,event.getSource().getDeathMessage(bot).getUnformattedText());
+        if(!event.getEntityLiving().world.isRemote&&event.getEntityLiving() instanceof SurvivorPlayer bot&&bots.get(key(bot.getName()))==bot){
+            SurvivorMemory.get((WorldServer)bot.world).count(bot.getUniqueID(),"deaths");
+            SurvivorTelemetry.event("death",bot,event.getSource().getDeathMessage(bot).getUnformattedText());
+        }
         if(event.getEntityLiving().world.isRemote)return;
         if(event.getSource().getTrueSource() instanceof SurvivorPlayer bot && bots.get(key(bot.getName()))==bot && com.x4yi.automata.compat.ManhuntCompat.isHostile(event.getEntityLiving())){
             bot.recordVictory();
@@ -254,7 +257,7 @@ public final class SurvivorService extends CommandBase {
         for(SurvivorPlayer bot:bots.values()) if(bot.world==event.getWorld() && bot.getDistanceSqToCenter(pos)<=144) bot.explosionAlert(pos);
     }
     @Override public String getName() { return "manhuntai"; }
-    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | park <name> | resume <name> | parked | pause | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
+    @Override public String getUsage(ICommandSender sender) { return "/manhuntai spawn <name> | reinforce | population <on|off|0..6> | list | progress <name> | population status | park <name> | resume <name> | parked | pause | remove <name> | clear | furnace <name> | smelt <name> <item-id> | vehicle <name> <recipe-id> | preparearena <name> <x> <y> <z> | arena <x> <y> <z> | goal <name> <item-id|clear> | industry <name> <on|off> | auto <name> <on|off> | fortify <name> | squadbuild <name> | lava <name> <x> <y> <z> | defense <name> <x> <y> <z> <ammo-id> <side> | defense <name> clear | supply <name> | craft <name> <recipe-id> | place <name> <x> <y> <z> [item-id]"; }
     @Override public int getRequiredPermissionLevel() { return 2; }
     @Override public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if(args.length==1&&args[0].equals("rosterjson")){
@@ -270,6 +273,15 @@ public final class SurvivorService extends CommandBase {
         }
         if(args.length==1&&args[0].equals("reinforce")){
             population.reinforce();sender.sendMessage(new TextComponentString("AI reinforcement search scheduled for next second, prioritizing loaded safe areas near human BRO. No forced spawn."));return;
+        }
+        if(args.length==2 && args[0].equals("progress")){
+            SurvivorPlayer bot=bots.get(key(args[1]));
+            if(bot==null)throw new CommandException("AI survivor not active; use /manhuntai parked or /manhuntai list");
+            for(String line:bot.progressReport().split("\n"))sender.sendMessage(new TextComponentString(line));
+            return;
+        }
+        if(args.length==2 && args[0].equals("population")&&args[1].equals("status")){
+            sender.sendMessage(new TextComponentString("Population: "+bots.size()+"/"+population.target()+"; "+population.status()));return;
         }
         if(args.length==2 && args[0].equals("population")){
             if(args[1].equals("off"))population.configure(false,population.target());
