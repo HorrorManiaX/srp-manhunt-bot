@@ -33,6 +33,7 @@ final class SurvivorWork {
     private BlockPos scanOrigin, expedition;
     private int expeditionDeadline, expeditionIndex, failedScans, nextExpedition;
     private String searchStatus="idle";
+    private int woodSeen,woodDenied,woodUnreachable,nextCloseWood;
     private BlockPos failedRouteGoal;
     private int failedRouteCount;
     void routeFailed(BlockPos p){
@@ -65,7 +66,7 @@ final class SurvivorWork {
     private final java.util.LinkedHashMap<BlockPos,Integer> failedTargets=new java.util.LinkedHashMap<>();
     private static final int SCAN_SIZE=SurvivorExplorationPolicy.SCAN_SIZE;
     private boolean inRange(BlockPos p){return SurvivorExplorationPolicy.within(p.distanceSq(home));}
-    String searchStatus(){return searchStatus;}
+    String searchStatus(){return searchStatus+" | wood seen="+woodSeen+" denied="+woodDenied+" unreachable="+woodUnreachable+(target==null?"":" target="+target+" progress="+Math.round(progress*100)+"%");}
     private void reject(BlockPos p){if(p==null)return;failedTargets.put(p.toImmutable(),age+2400);while(failedTargets.size()>64)failedTargets.remove(failedTargets.keySet().iterator().next());}
     private boolean rejected(BlockPos p){return failedTargets.getOrDefault(p,0)>age;}
     private SurvivorProgression.Task task=SurvivorProgression.Task.IDLE;
@@ -149,18 +150,30 @@ final class SurvivorWork {
             kind==SurvivorProgression.Task.STONE?(block==Blocks.STONE||block==Blocks.COBBLESTONE):false;
     }
     private boolean selectResource(BlockPos p){
-        if(rejected(p)||!matches(p,task)||!SurvivorPermissions.allowed(bot,p,false))return false;
+        if(rejected(p)||!matches(p,task))return false;
+        boolean wood=task==SurvivorProgression.Task.WOOD&&requestedOre==null;
+        if(wood)woodSeen++;
+        if(!SurvivorPermissions.allowed(bot,p,false)){if(wood)woodDenied++;return false;}
         if(!visible(p)&&p.distanceSq(bot.getPosition())>12*12)return false;
         // Salvage city planks, not the immediate camp structure or a player claim.
         if(world().getBlockState(p).getBlock()==Blocks.PLANKS&&p.distanceSq(home)<4)return false;
-        BlockPos stand=adjacent(p);
-        if(stand==null||rejected(stand)||!reserve(p))return false;
+        BlockPos stand=bot.getDistanceSqToCenter(p)<=16&&visible(p)?bot.getPosition():adjacent(p);
+        if(stand==null||rejected(stand)){if(wood)woodUnreachable++;return false;}
+        if(!reserve(p))return false;
         target=p.toImmutable();destination=stand;deadline=age+600;expedition=null;failedScans=0;searchStatus="mining target "+task;
         if(requestedOre==null)memory().note(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",target,world().getTotalWorldTime());
         return true;
     }
     private boolean findResource(){
         if(target!=null)return true;
+        // Opportunistically harvest a visible, permitted block within reach even during an expedition.
+        if(task==SurvivorProgression.Task.WOOD&&requestedOre==null&&age>=nextCloseWood){
+            nextCloseWood=age+40;BlockPos here=bot.getPosition();long until=System.nanoTime()+350_000L;
+            for(int i=0;i<96&&System.nanoTime()<until;i++){
+                int[] o=SurvivorExplorationPolicy.scanOffset(i);BlockPos p=here.add(o[0],o[1],o[2]);
+                if(bot.getDistanceSqToCenter(p)<=16&&matches(p,task)&&visible(p)&&selectResource(p))return true;
+            }
+        }
         if(expedition!=null){
             if(bot.getDistanceSqToCenter(expedition)<9){expedition=null;destination=null;scanOrigin=null;scanCursor=0;memory().count(bot.getUniqueID(),"explored");}
             else if(age>=expeditionDeadline){reject(expedition);expedition=null;destination=null;scanOrigin=null;scanCursor=0;}
@@ -303,6 +316,7 @@ final class SurvivorWork {
         if(target==null)return false;
         if(!matches(target,task)||!SurvivorPermissions.allowed(bot,target,false)||!reserve(target)){reject(target);clear();return false;}
         if(bot.getDistanceSqToCenter(target)>16||!visible(target)){resetMining();return false;}
+        searchStatus="harvesting "+task;
         if(!bot.onGround&&!bot.isInWater())return false;
         IBlockState state=world().getBlockState(target);
         if(state.getBlock().hasTileEntity(state)||state.getBlockHardness(world(),target)<0){clear();return false;}
@@ -323,7 +337,7 @@ final class SurvivorWork {
         progress=Math.min(1,progress+delta);
         if(progress>=1){
             BlockPos p=target;resetMining();
-            if(bot.interactionManager.tryHarvestBlock(p))memory().count(bot.getUniqueID(),"mined");else reject(p);
+            if(bot.interactionManager.tryHarvestBlock(p))memory().count(bot.getUniqueID(),"mined");else{reject(p);searchStatus="harvest denied "+p;}
             clear();nextPlan=age+10;return true;
         }
         int nextStage=Math.min(9,(int)(progress*10));
