@@ -89,6 +89,10 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         boolean vagrant=target instanceof net.minecraft.entity.player.EntityPlayer;
         if(vagrant)enemy*=1.15;
         var next=SurvivorCombatPolicy.decide(getHealth(),getMaxHealth(),own,allied,enemy,Math.max(1,closeEnemies),hasLoadedGun(),dangerousHere(),vagrant);
+        // An isolated ordinary zombie or spider is a viable early-game target for an armed healthy survivor.
+        if(!dangerousHere()&&visible&&closeEnemies<=1&&getHealth()>=getMaxHealth()*.8f&&findMelee()>=0
+            &&(target.getClass()==net.minecraft.entity.monster.EntityZombie.class||target.getClass()==net.minecraft.entity.monster.EntitySpider.class)
+            &&target.getHealth()<=getMaxHealth()&&getFoodStats().getFoodLevel()>=8)next=SurvivorCombatPolicy.Order.ENGAGE;
         if(next==SurvivorCombatPolicy.Order.WITHDRAW&&combatOrder!=next)withdrawUntil=age+40;
         if(age<withdrawUntil&&next==SurvivorCombatPolicy.Order.ENGAGE)next=hasLoadedGun()?SurvivorCombatPolicy.Order.COVER:SurvivorCombatPolicy.Order.WITHDRAW;
         if(next!=combatOrder&&visible&&age>=nextOrderReport){nextOrderReport=age+160;SurvivorService.INSTANCE.reportOrder(this,next);}
