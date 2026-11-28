@@ -268,7 +268,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     private void invalidateRoute() {
         cancelled.set(true);
         cancelled = new AtomicBoolean();
-        pending = null; path = PathResult.EMPTY; step = 0; plannedGoal = null; nextPlan = 0;
+        pending = null; path = PathResult.EMPTY; step = 0; plannedGoal = null; nextPlan = 0;localStep=null;localRetry=0;
     }
     void setStressed(boolean stressed) { this.stressed=stressed; }
     void tookDamage(){lastDamageTick=age;nextHazardScan=age;nextScan=age;}
@@ -868,20 +868,53 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         }
         setSprinting(true);moveForward=distance<.45?0:.85f;return true;
     }
+    private BlockPos localStep,localGoal,localOrigin;
+    private int localRetry;
+    private record LocalNode(BlockPos pos,BlockPos first){}
+    private boolean localEdge(BlockPos from,BlockPos to){
+        if(!standable(to))return false;
+        int dy=to.getY()-from.getY();
+        if(dy>0&&(!world.isBlockLoaded(from.up(2))||!CellClassifier.isPassable(world,from.up(2))))return false;
+        if(dy<0&&(!world.isBlockLoaded(to.up(2))||!CellClassifier.isPassable(world,to.up(2))))return false;
+        return true;
+    }
+    private BlockPos findLocalStep(BlockPos here,BlockPos goal){
+        java.util.ArrayDeque<LocalNode> queue=new java.util.ArrayDeque<>();
+        java.util.HashSet<BlockPos> seen=new java.util.HashSet<>();
+        queue.add(new LocalNode(here,null));seen.add(here);
+        BlockPos best=null;double score=here.distanceSq(goal);
+        int count=0;long until=System.nanoTime()+600_000L;
+        while(!queue.isEmpty()&&count++<72&&System.nanoTime()<until){
+            LocalNode node=queue.removeFirst();
+            for(EnumFacing f:EnumFacing.HORIZONTALS)for(int dy:new int[]{0,1,-1}){
+                BlockPos p=node.pos().offset(f).up(dy);
+                if(p.distanceSq(here)>36||seen.contains(p)||!localEdge(node.pos(),p))continue;
+                seen.add(p);BlockPos first=node.first()==null?p:node.first();
+                if(node.first()==null&&dy==0&&!SurvivorTerrain.safeStep(world,posX,posY,posZ,f.getXOffset()*.55,f.getZOffset()*.55))continue;
+                double d=p.distanceSq(goal);
+                if(d<score){score=d;best=first;}
+                queue.addLast(new LocalNode(p,first));
+            }
+        }
+        return best;
+    }
     private void walkLocal(BlockPos goal){
         if(getDistanceSqToCenter(goal)<2.25)return;
-        BlockPos here=getPosition(),best=null;double score=here.distanceSq(goal);
-        for(EnumFacing f:EnumFacing.HORIZONTALS)for(int dy:new int[]{0,1}){
-            BlockPos p=here.offset(f).up(dy);
-            if(!standable(p)||p.distanceSq(goal)>=score)continue;
-            if(dy==0&&!SurvivorTerrain.safeStep(world,posX,posY,posZ,f.getXOffset()*.65,f.getZOffset()*.65))continue;
-            if(dy==1&&(!world.isBlockLoaded(here.up(2))||!CellClassifier.isPassable(world,here.up(2))))continue;
-            best=p;score=p.distanceSq(goal);
+        BlockPos here=getPosition();
+        if(localStep!=null&&goal.equals(localGoal)&&getDistanceSqToCenter(localStep)<.45){localStep=null;localRetry=age;}
+        if(localStep==null||!goal.equals(localGoal)||!localEdge(here,localStep)||localOrigin!=null&&here.distanceSq(localOrigin)>4){
+            localStep=null;
+            if(age<localRetry)return;
+            localRetry=age+10;localGoal=goal;localOrigin=here;localStep=findLocalStep(here,goal);
         }
-        if(best!=null){float yaw=(float)Math.toDegrees(Math.atan2(best.getZ()+.5-posZ,best.getX()+.5-posX))-90;
-            lookAt(best.getX()+.5,posY+getEyeHeight(),best.getZ()+.5);
-            if(Math.abs(MathHelper.wrapDegrees(yaw-rotationYaw))<25){moveForward=.55f;if(onGround&&best.getY()>here.getY())jump();navigation="local step";}
-        }
+        BlockPos best=localStep;
+        if(best==null)return;
+        double dx=best.getX()+.5-posX,dz=best.getZ()+.5-posZ,dist=Math.hypot(dx,dz);
+        if(dist<.15)return;
+        if(best.getY()==here.getY()&&!SurvivorTerrain.safeStep(world,posX,posY,posZ,dx/dist*Math.min(.55,dist),dz/dist*Math.min(.55,dist))){localStep=null;return;}
+        float yaw=(float)Math.toDegrees(Math.atan2(dz,dx))-90;
+        lookAt(best.getX()+.5,posY+getEyeHeight(),best.getZ()+.5);
+        if(Math.abs(MathHelper.wrapDegrees(yaw-rotationYaw))<25){moveForward=.6f;if(onGround&&best.getY()>here.getY())jump();navigation="local detour";}
     }
     private void followPath() {
         while(step<path.length()){
