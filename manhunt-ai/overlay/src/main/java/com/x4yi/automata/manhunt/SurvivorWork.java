@@ -70,7 +70,7 @@ final class SurvivorWork {
             if(s.getItem() instanceof ItemFood)food+=s.getCount();
             if(s.getItem() instanceof ItemBlock b && b.getBlock()!=Blocks.CRAFTING_TABLE && b.getBlock().getDefaultState().isFullCube() && !b.getBlock().hasTileEntity(b.getBlock().getDefaultState()))blocks+=s.getCount();
         }
-        boolean knownBench=bench!=null && world().isBlockLoaded(bench)&&world().getBlockState(bench).getBlock()==Blocks.CRAFTING_TABLE;
+        boolean knownBench=bench!=null && bench.distanceSq(bot.getPosition())<40*40 && world().isBlockLoaded(bench)&&world().getBlockState(bench).getBlock()==Blocks.CRAFTING_TABLE;
         return new SurvivorProgression.Stock(food,count(Item.getItemFromBlock(Blocks.LOG),Item.getItemFromBlock(Blocks.LOG2)),
             count(Item.getItemFromBlock(Blocks.PLANKS)),count(Items.STICK),count(Item.getItemFromBlock(Blocks.COBBLESTONE)),
             knownBench||has(Item.getItemFromBlock(Blocks.CRAFTING_TABLE)),
@@ -121,6 +121,8 @@ final class SurvivorWork {
     }
     private boolean selectResource(BlockPos p){
         if(rejected(p)||!matches(p,task)||!visible(p)||!SurvivorPermissions.allowed(bot,p,false))return false;
+        // Salvage city planks, not the immediate camp structure or a player claim.
+        if(world().getBlockState(p).getBlock()==Blocks.PLANKS&&p.distanceSq(home)<64)return false;
         BlockPos stand=adjacent(p);
         if(stand==null||!reserve(p))return false;
         target=p.toImmutable();destination=stand;deadline=age+600;expedition=null;failedScans=0;searchStatus="mining target "+task;
@@ -135,6 +137,7 @@ final class SurvivorWork {
             else{destination=expedition;searchStatus="exploring "+task;return true;}
         }
         if(scanOrigin==null){scanOrigin=bot.getPosition();scanCursor=0;}
+        if(standable(scanOrigin))destination=scanOrigin;
         if(scanCursor==0&&requestedOre==null){
             BlockPos remembered=memory().recall(bot.getUniqueID(),task==SurvivorProgression.Task.WOOD?"wood":"stone",world().getTotalWorldTime(),12000);
             if(remembered!=null&&remembered.distanceSq(bot.getPosition())<40*40&&selectResource(remembered))return true;
@@ -181,7 +184,7 @@ final class SurvivorWork {
         for(EnumFacing f:EnumFacing.HORIZONTALS){
             BlockPos p=bot.getPosition().offset(f,2);
             if(world().isBlockLoaded(p)&&world().isAirBlock(p)&&world().isBlockLoaded(p.down())&&CellClassifier.isSolidSupport(world(),p.down())&&SurvivorPermissions.allowed(bot,p,true)){
-                if(bot.requestBuild(p,new net.minecraft.util.ResourceLocation("minecraft:crafting_table"))){bench=p;memory().note(bot.getUniqueID(),"bench",p,world().getTotalWorldTime());}
+                if(bot.requestFieldBench(p)){bench=p;memory().note(bot.getUniqueID(),"bench",p,world().getTotalWorldTime());}
                 return false;
             }
         }
@@ -193,6 +196,7 @@ final class SurvivorWork {
         if(target!=null && (age>=deadline||!matches(target,task))){if(age>=deadline)reject(target);clear();}
         if(target!=null)return;
         if(age<nextPlan)return;nextPlan=age+10;
+        if(expedition!=null&&findResource())return;
         if(bot.seasonWork(age))return;
         if(age>=nextEquipment){
             nextEquipment=age+100;
