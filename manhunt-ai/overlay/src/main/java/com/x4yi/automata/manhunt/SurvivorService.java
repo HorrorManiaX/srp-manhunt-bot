@@ -321,7 +321,8 @@ public final class SurvivorService extends CommandBase {
         }
         if(args.length==1 && args[0].equals("parked")){
             if(!(sender.getEntityWorld() instanceof WorldServer world))throw new CommandException("Server world required");
-            sender.sendMessage(new TextComponentString("Parked in this dimension: "+SurvivorRoster.get(world).names()));return;
+            var parkedNames=SurvivorRoster.get(world).names();parkedNames.removeIf(k->bots.containsKey(k));
+            sender.sendMessage(new TextComponentString("Parked in this dimension: "+parkedNames));return;
         }
         if(args.length==1 && args[0].equals("pause")){
             population.configure(false,population.target());
@@ -350,14 +351,14 @@ public final class SurvivorService extends CommandBase {
             BlockPos saved=SurvivorRoster.position(snapshot);
             BlockPos pos=args.length==5?parseBlockPos(sender,args,2,false):saved;
             boolean relocated=args.length==5;
-            if(args.length==2&&!resumeSite(world,pos)){
+            if(args.length==2&&!savedSite(world,pos)){
                 BlockPos anchor=sender instanceof EntityPlayerMP?sender.getPosition():overworldCamp(world);
                 if(anchor==null)anchor=broAnchor(world);
                 if(anchor!=null)pos=nearResumeSite(world,anchor);
                 if(pos==null||!resumeSite(world,pos))throw new CommandException("Saved position unavailable at "+saved+"; use /manhuntai resume "+args[1]+" <x> <y> <z> in a safe loaded area");
                 relocated=true;
             }
-            if(!resumeSite(world,pos))throw new CommandException("Resume position unsafe, occupied or unloaded: "+pos);
+            if(!(relocated?resumeSite(world,pos):savedSite(world,pos)))throw new CommandException("Resume position unsafe, occupied or unloaded: "+pos);
             if(!restoreParked(server,world,k,pos,relocated))throw new CommandException("AI identity, permissions or capacity conflict; snapshot preserved");
             sender.sendMessage(new TextComponentString("Resumed "+args[1]+" at "+pos+(relocated?" (relocated; inventory preserved)":"")));return;
         }
@@ -490,6 +491,12 @@ public final class SurvivorService extends CommandBase {
         bot.autonomous(true);bot.industry(true);
         activate(server,world,bot);roster.markRecruited(k);return true;
     }
+    private boolean savedSite(WorldServer world,BlockPos pos){
+        if(pos==null||pos.getY()<1||pos.getY()>253||!world.getWorldBorder().contains(pos))return false;
+        // One existing chunk may be read from disk like a player login; never generate terrain or retain tickets.
+        if(!world.isBlockLoaded(pos)&&world.getChunkProvider().loadChunk(pos.getX()>>4,pos.getZ()>>4)==null)return false;
+        return standable(world,pos)&&world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(.2,1,.2)).isEmpty();
+    }
     private boolean resumeSite(WorldServer world,BlockPos pos){
         if(pos==null||!standable(world,pos)||occupied(world,pos))return false;
         if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new net.minecraft.util.math.AxisAlignedBB(pos).grow(1)).isEmpty())return false;
@@ -511,12 +518,12 @@ public final class SurvivorService extends CommandBase {
     boolean autoResume(MinecraftServer server,WorldServer world,String k,BlockPos fallback)throws CommandException{
         var n=SurvivorRoster.get(world).snapshot(k);if(n==null)return false;
         BlockPos pos=SurvivorRoster.position(n);
-        if(resumeSite(world,pos)&&restoreParked(server,world,k,pos,false))return true;
+        if(savedSite(world,pos)&&restoreParked(server,world,k,pos,false))return true;
         return fallback!=null&&resumeSite(world,fallback)&&restoreParked(server,world,k,fallback,true);
     }
     private boolean restoreParked(MinecraftServer server,WorldServer world,String k,BlockPos pos,boolean relocated)throws CommandException{
         SurvivorRoster roster=SurvivorRoster.get(world);var n=roster.snapshot(k);
-        if(n==null||!resumeSite(world,pos))return false;
+        if(n==null||!(relocated?resumeSite(world,pos):savedSite(world,pos)))return false;
         String name=plainName(n.getString("name"));
         if(!name.matches("[A-Za-z0-9_]{1,16}")||!key(name).equals(k)||activeName(name)||server.getPlayerList().getPlayerByUsername(name)!=null||bots.size()>=MAX)return false;
         BlockPos home=relocated?pos:SurvivorRoster.home(n);
@@ -527,7 +534,7 @@ public final class SurvivorService extends CommandBase {
         if(relocated&&!SurvivorPermissions.allowed(bot,pos,true)){bot.cancelPlanning();return false;}
         // Keep the original snapshot until activation actually succeeds.
         activate(server,world,bot,!n.hasKey("player",10));
-        roster.markRecruited(k);roster.park(k,bot);return true;
+        roster.markRecruited(k);return true;
     }
     private static void announceLifecycle(MinecraftServer server,SurvivorPlayer bot,boolean joined){
         var message=new net.minecraft.util.text.TextComponentTranslation(joined?"multiplayer.player.joined":"multiplayer.player.left",bot.getName());
