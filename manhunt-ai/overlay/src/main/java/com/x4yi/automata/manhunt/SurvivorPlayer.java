@@ -225,8 +225,20 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     String dialogueContext(){return activity()+"; характер: "+SurvivorPersonality.description(personality())+"; здоровье "+getHealth()+"/"+getMaxHealth();}
     String technologyGoalId(){return work.goalId();}
+    String progressReport(){
+        StringBuilder items=new StringBuilder();
+        for(int i=0;i<inventory.getSizeInventory();i++){
+            ItemStack s=inventory.getStackInSlot(i);if(s.isEmpty())continue;
+            if(items.length()>0)items.append(", ");
+            items.append(i).append(":").append(s.getItem().getRegistryName()).append("@").append(s.getMetadata()).append(" x").append(s.getCount());
+        }
+        return getName()+" | HP="+getHealth()+"/"+getMaxHealth()+" hunger="+getFoodStats().getFoodLevel()+" | position="+getPosition()+" home="+home+" dimension="+world.provider.getDimension()+"\n"
+            +activity()+" | auto="+autonomousEnabled()+" | industry="+industryEnabled()+" | search="+work.searchStatus()+" | "+infrastructureStatus()+"\n"
+            +"Historical tracked counters: "+SurvivorMemory.get((WorldServer)world).progress(getUniqueID())+"\nInventory: "+(items.length()==0?"empty":items.toString());
+    }
     void recordVictory(){
         victories++;
+        SurvivorMemory.get((WorldServer)world).count(getUniqueID(),"kills");
         if(age<nextVictoryChat)return;
         nextVictoryChat=age+400;
         SurvivorService.INSTANCE.reportVictory(this);
@@ -342,7 +354,13 @@ public final class SurvivorPlayer extends EntityPlayerMP {
     }
     public boolean requestBuild(BlockPos pos) { return requestBuild(pos, null); }
     public boolean requestBuild(BlockPos pos, net.minecraft.util.ResourceLocation item) {
-        if (!world.isBlockLoaded(pos) || pos.distanceSq(home) > 12*12 || !world.isAirBlock(pos) || !SurvivorPermissions.allowed(this,pos,true)) return false;
+        return requestBuild(pos,item,false);
+    }
+    boolean requestFieldBench(BlockPos pos){
+        return requestBuild(pos,new net.minecraft.util.ResourceLocation("minecraft:crafting_table"),true);
+    }
+    private boolean requestBuild(BlockPos pos, net.minecraft.util.ResourceLocation item,boolean fieldBench) {
+        if (!world.isBlockLoaded(pos) || (fieldBench?(pos.distanceSq(home)>128*128||pos.distanceSq(getPosition())>36):pos.distanceSq(home)>12*12) || !world.isAirBlock(pos) || !SurvivorPermissions.allowed(this,pos,true)) return false;
         if(buildGoal!=null)return buildGoal.equals(pos)&&java.util.Objects.equals(buildItem,item);
         buildGoal = pos; buildItem = item; buildDeadline = age + 400; buildApproach=null;nextBuildApproach=0;invalidateRoute();return true;
     }
@@ -359,7 +377,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)for(int dy=-2;dy<=0;dy++){
             if(x==0&&z==0)continue;
             BlockPos p=buildGoal.add(x,dy,z);
-            if(!standable(p)||p.distanceSq(home)>144)continue;
+            if(!standable(p)||p.distanceSq(home)>(buildItem!=null&&buildItem.toString().equals("minecraft:crafting_table")?128*128:144))continue;
             double d=getDistanceSqToCenter(p)+.25*p.distanceSq(buildGoal);
             if(d<best){best=d;buildApproach=p;}
         }
@@ -549,13 +567,14 @@ public final class SurvivorPlayer extends EntityPlayerMP {
             if (trace == null || !support.equals(trace.getBlockPos()) || trace.sideHit != side) continue;
             equipInventorySlot(slot); moveForward=0;moveStrafing=0;lookAt(hit.x,hit.y,hit.z);
             EnumActionResult result=interactionManager.processRightClickBlock(this, world, getHeldItemMainhand(), EnumHand.MAIN_HAND, support, side, (float)(hit.x-support.getX()), (float)(hit.y-support.getY()), (float)(hit.z-support.getZ()));
-            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal);autoTurret.placed(buildGoal);vehicles.placed(buildGoal);placedBlocks++;buildGoal=null;buildApproach=null;invalidateRoute(); }
+            if(result==EnumActionResult.SUCCESS && !world.isAirBlock(buildGoal)) { swingArm(EnumHand.MAIN_HAND); furnace.placed(buildGoal);autoTurret.placed(buildGoal);vehicles.placed(buildGoal);placedBlocks++;SurvivorMemory.get((WorldServer)world).count(getUniqueID(),"placed");buildGoal=null;buildApproach=null;invalidateRoute(); }
             return;
         }
     }
     public void drive() {
         if (!isEntityAlive()) return;
         age++;
+        if(age%20==0)SurvivorMemory.get((WorldServer)world).count(getUniqueID(),"active_seconds");
         if(SurvivorWeapons.advanceReload(this,age)){
             if(target!=null&&getDistanceSq(target)<36){SurvivorWeapons.cancelReload(this);}
             else{moveForward=0;moveStrafing=0;onUpdateEntity();return;}
@@ -679,7 +698,7 @@ public final class SurvivorPlayer extends EntityPlayerMP {
         } else {
             if(isHandActive()&&!(action==SurvivorBrain.Action.RANGED&&gunSlot<0&&getActiveItemStack().getItem()==Items.BOW)&&!(action==SurvivorBrain.Action.MELEE&&getActiveHand()==EnumHand.OFF_HAND&&(age<nextAttack||getCooledAttackStrength(0)<.9F)))cancelActiveUse();
             if (action==SurvivorBrain.Action.BUILD) placeRequestedBlock();
-            if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){loot.onCollideWithPlayer(this);if(loot.isDead)loot=null;}
+            if(action==SurvivorBrain.Action.SCAVENGE && loot!=null && getDistanceSq(loot)<1.44){int before=loot.getItem().getCount();loot.onCollideWithPlayer(this);if(loot.isDead||loot.getItem().getCount()<before)SurvivorMemory.get((WorldServer)world).count(getUniqueID(),"loot");if(loot.isDead)loot=null;}
             if(action==SurvivorBrain.Action.PATROL&&assistance==null&&buildGoal==null&&!stressed){if(lavaTrap.destination()!=null)lavaTrap.tick(age);else if(infrastructure==null&&(!furnace.active()||furnace.destination()==null)){if(foodRecovery.destination()!=null)foodRecovery.act(age);else work.act();}}
         }
         onUpdateEntity();
