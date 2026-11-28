@@ -26,6 +26,8 @@ final class SurvivorPopulation {
     private BlockPos camp;
     private boolean reinforcement;
     private int sample;
+    private String status="initializing";
+    String status(){return status+"; next_attempt_ticks="+Math.max(0,nextJoin-tick)+"; failures="+failures;}
     void init(){
         if(config!=null)return;
         config=new Configuration(new File(Loader.instance().getConfigDir(),"manhunt-ai.cfg"));
@@ -54,9 +56,10 @@ final class SurvivorPopulation {
     void reset(){config=null;tick=0;nextJoin=SurvivorPopulationPolicy.joinDelay(random);failures=0;camp=null;reinforcement=false;sample=0;suppressed.clear();cooldown.clear();deaths.clear();}
     void tick(MinecraftServer server,SurvivorService service,boolean stressed){
         tick+=20;if(tick<nextJoin)return;init();
-        if(!SurvivorPopulationPolicy.mayJoin(enabled,stressed,service.activeCount(),target,tick,nextJoin))return;
+        if(!SurvivorPopulationPolicy.mayJoin(enabled,stressed,service.activeCount(),target,tick,nextJoin)){status=!enabled?"disabled":stressed?"server load":service.activeCount()>=target?"full":"waiting";return;}
         WorldServer world=server.getWorld(0);
-        if(world==null){nextJoin=tick+200;return;}
+        if(world==null){status="overworld unavailable";nextJoin=tick+200;return;}
+        status="no eligible candidate";
         // Exactly one candidate attempt per pass. Restore only loaded snapshots.
         for(String name:NAMES){
             String full=name,k=canonical(full);
@@ -69,8 +72,8 @@ final class SurvivorPopulation {
                 }
                 if(service.parkedElsewhere(server,k))continue;
                 BlockPos site=pickSite(world,service);
-                if(site==null)break;
-                if(service.autoSpawn(server,world,full,site,siegeKit)){if(camp==null)camp=site;success();return;}
+                if(site==null){status="no safe loaded site for "+full;break;}
+                if(service.autoSpawn(server,world,full,site,siegeKit)){if(camp==null)camp=site;success();return;}status="spawn denied for "+full;
             }catch(Exception | LinkageError ex){
                 cooldown.put(k,tick+6000);
                 AutomataMod.LOGGER.warn("Manhunt AI population candidate failed: "+full,ex);
@@ -81,46 +84,45 @@ final class SurvivorPopulation {
     }
     void failure(Throwable ex){
         nextJoin=tick+6000;
-        if(++failures==1)AutomataMod.LOGGER.warn("Manhunt AI population director temporarily paused",ex);
+        status="director error";if(++failures==1)AutomataMod.LOGGER.warn("Manhunt AI population director temporarily paused",ex);
     }
-    private void success(){failures=0;reinforcement=false;nextJoin=tick+SurvivorPopulationPolicy.joinDelay(random);}
+    private void success(){failures=0;status="joined";nextJoin=tick+(reinforcement?200+random.nextInt(401):1200+random.nextInt(1201));}
     private BlockPos pickSite(WorldServer world,SurvivorService service){
         BlockPos origin=camp!=null?camp:service.overworldCamp(world);
         if(origin!=null)camp=origin;
         if(origin==null||reinforcement){BlockPos bro=service.broAnchor(world);if(bro!=null)origin=bro;}
         if(origin==null)origin=world.getSpawnPoint();
         // After unsuccessful searches, expand to loaded areas around actual online humans.
-        if(failures>=3 && sample%2==0){
+        if(failures>=2 && (sample/16)%2==0){
             var humans=service.safeHumanAnchors(world);
             if(!humans.isEmpty())origin=humans.get(Math.floorMod(sample/24,humans.size()));
         }
         BlockPos best=null;int bestScore=-1;
         for(int i=0;i<16;i++){
             int k=sample++ & 255;
-            int radius=camp!=null&&failures<3?6+(k/16)%9:24+(k/16)*4;
+            int radius=camp!=null&&failures<2?6+(k/16)%12:8+(k/16)*6;
             double angle=(k%16)*Math.PI/8;
             BlockPos column=origin.add(Math.round(Math.cos(angle)*radius),0,Math.round(Math.sin(angle)*radius));
             if(!world.isBlockLoaded(column))continue;
             int top=world.getHeight(column).getY();
             // A city rooftop is not necessarily the safest place. Try loaded floors below it too.
-            for(int dy:new int[]{0,-4,-8,-12}){
-                int y=top+dy;
+            for(int y:new int[]{origin.getY(),origin.getY()+1,origin.getY()-1,top,top-4,top-8,top-12,origin.getY()+4,origin.getY()-4}){
                 BlockPos p=new BlockPos(column.getX(),y,column.getZ());
                 if(y<2||y>253||!SurvivorService.standable(world,p)||service.occupied(world,p)||service.homeTooClose(world,p))continue;
                 var floor=world.getBlockState(p.down());
                 if(floor.getMaterial()==net.minecraft.block.material.Material.LEAVES||floor.getMaterial().isLiquid()||floor.getBlock()==net.minecraft.init.Blocks.MAGMA||floor.getBlock()==net.minecraft.init.Blocks.CACTUS)continue;
                 int walkable=0;
                 for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++)if(SurvivorService.standable(world,p.add(x,0,z)))walkable++;
-                if(walkable<18)continue;
+                if(walkable<(failures>=2?9:14))continue;
                 int exits=SurvivorTerrain.safeExits(world,p);
-                if(exits<2)continue;
+                if(exits<(failures>=2?1:2))continue;
                 int elevation=SurvivorTerrain.elevation(world,p);
                 int cover=0;
                 for(int h=2;h<=5;h++)if(world.isBlockLoaded(p.up(h))&&world.getBlockState(p.up(h)).isFullCube()){cover=12;break;}
                 int score=walkable+cover+elevation*5+exits*3;
                 if(score<=bestScore)continue;
-                if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(24),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
-                if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(8)).isEmpty())continue;
+                if(!world.getEntitiesWithinAABB(EntityLivingBase.class,new AxisAlignedBB(p).grow(failures>=4?12:failures>=2?16:24),e->e.isEntityAlive()&&ManhuntCompat.isHostile(e)).isEmpty())continue;
+                if(!world.getEntitiesWithinAABB(net.minecraft.entity.player.EntityPlayer.class,new AxisAlignedBB(p).grow(4),e->!(e instanceof SurvivorPlayer)).isEmpty())continue;
                 best=p;bestScore=score;
             }
         }
