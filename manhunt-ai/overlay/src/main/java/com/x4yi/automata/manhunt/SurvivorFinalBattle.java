@@ -45,8 +45,23 @@ final class SurvivorFinalBattle {
     static Battle current(){return cached;}
     static BlockPos rendezvous(SurvivorPlayer bot){
         Battle b=cached;
-        if(b==null||b.dimension()!=bot.world.provider.getDimension()||!b.intact()||bot.getHealth()<bot.getMaxHealth()*.65f||!bot.hasLoadedGun()||bot.getFoodStats().getFoodLevel()<12)return null;
-        if(bot.getDistanceSqToCenter(b.origin())>48*48)return null;
+        if(b==null||b.dimension()!=bot.world.provider.getDimension()||!b.intact()||bot.getHealth()<bot.getMaxHealth()*.65f||(!bot.hasLoadedGun()&&bot.bestMelee()<0)||bot.getFoodStats().getFoodLevel()<12)return null;
+        // March toward a real active battle in loaded, pathable stages instead of waiting inside 48 blocks.
+        if(bot.getDistanceSqToCenter(b.origin())>48*48){
+            BlockPos here=bot.getPosition();double dx=b.origin().getX()-here.getX(),dz=b.origin().getZ()-here.getZ();
+            double length=Math.hypot(dx,dz);if(length<1)return null;
+            double angle=Math.atan2(dz,dx);
+            BlockPos best=null;double distance=here.distanceSq(b.origin());
+            for(double turn:new double[]{0,.35,-.35,.7,-.7})for(int step:new int[]{24,16,8}){
+                BlockPos col=here.add(Math.round(Math.cos(angle+turn)*step),0,Math.round(Math.sin(angle+turn)*step));
+                for(int dy:new int[]{0,1,-1,3,-3,6,-6}){
+                    BlockPos p=col.up(dy);double d=p.distanceSq(b.origin());
+                    if(d>=distance||!SurvivorTerrain.stand(bot.world,p)||SurvivorTerrain.safeExits(bot.world,p)==0)continue;
+                    best=p;distance=d;
+                }
+            }
+            return best;
+        }
         if(bot.getDistanceSqToCenter(b.origin())<Math.max(4,Math.min(b.radius(),b.scoreRadius())-4)*Math.max(4,Math.min(b.radius(),b.scoreRadius())-4))return null;
         BlockPos best=null;double d=Double.MAX_VALUE;
         for(var facing:net.minecraft.util.EnumFacing.HORIZONTALS)for(int r=3;r<=6;r+=3){
