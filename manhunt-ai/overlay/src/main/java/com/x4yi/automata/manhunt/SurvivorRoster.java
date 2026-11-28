@@ -22,13 +22,17 @@ public final class SurvivorRoster extends WorldSavedData {
     void markRecruited(String key){recruited.setBoolean(key,true);markDirty();}
     boolean contains(String key){return parked.hasKey(key,10);}
     boolean park(String key,SurvivorPlayer bot){
-        if(contains(key)||parked.getKeySet().size()>=32||!bot.isEntityAlive())return false;
+        if((!contains(key)&&parked.getKeySet().size()>=32)||!bot.isEntityAlive())return false;
         NBTTagCompound n=new NBTTagCompound();
         n.setString("name",bot.getName());
         n.setString("uuid",bot.getUniqueID().toString());
         n.setLong("home",bot.homePosition().toLong());
         n.setLong("position",bot.getPosition().toLong());
         n.setTag("inventory",bot.inventory.writeToNBT(new NBTTagList()));
+        NBTTagCompound player=new NBTTagCompound();
+        bot.writeToNBT(player); // Vanilla player data plus ForgeCaps and ForgeData.
+        n.setTag("player",player);
+        n.setInteger("dimension",bot.world.provider.getDimension());
         n.setFloat("health",bot.getHealth());
         bot.getFoodStats().writeNBT(n);
         n.setInteger("hotbar",bot.inventory.currentItem);
@@ -47,8 +51,16 @@ public final class SurvivorRoster extends WorldSavedData {
     static BlockPos position(NBTTagCompound n){return BlockPos.fromLong(n.getLong("position"));}
     static BlockPos home(NBTTagCompound n){return BlockPos.fromLong(n.getLong("home"));}
     static void restore(SurvivorPlayer bot,NBTTagCompound n){
-        bot.inventory.clear();
-        bot.inventory.readFromNBT(n.getTagList("inventory",10));
+        if(n.hasKey("player",10)){
+            NBTTagCompound player=n.getCompoundTag("player").copy();
+            // Profile identity and world are controlled by the roster; relocation is applied by the caller.
+            bot.readFromNBT(player);
+            bot.getEntityData().setBoolean("ManhuntAIPlayer",true);
+            bot.setGameType(net.minecraft.world.GameType.SURVIVAL);
+        }else{
+            bot.inventory.clear();
+            bot.inventory.readFromNBT(n.getTagList("inventory",10));
+        }
         bot.inventory.currentItem=Math.max(0,Math.min(8,n.getInteger("hotbar")));
         float health=n.getFloat("health");
         bot.setHealth(Float.isFinite(health)?Math.max(1,Math.min(bot.getMaxHealth(),health)):1);
